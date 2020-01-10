@@ -2,10 +2,10 @@
 <browserconfig>
   <msapplication>
     <tile>
-      <square70x70logo src="https://safe.fiery.me/icons/70px.png"/>
-      <square150x150logo src="https://safe.fiery.me/icons/270px.png"/>
-      <square310x310logo src="https://safe.fiery.me/icons/310px.png"/>
-      <wide310x150logo src="https://safe.fiery.me/icons/310pxw.png"/>
+      <square70x70logo src="https://tohru.is-very-cute.moe/icons/70px.png"/>
+      <square150x150logo src="https://tohru.is-very-cute.moe/icons/270px.png"/>
+      <square310x310logo src="https://tohru.is-very-cute.moe/icons/310px.png"/>
+      <wide310x150logo src="https://tohru.is-very-cute.moe/icons/310pxw.png"/>
       <TileColor>#232629</TileColor>
     </tile>
   </msapplication>

@@ -1,8 +1,8 @@
 {
-  "Name": "safe.fiery.me",
+  "Name": "tohru.is-very-cute.moe",
   "DestinationType": "ImageUploader, FileUploader",
   "RequestMethod": "POST",
-  "RequestURL": "https://safe.fiery.me/api/upload",
+  "RequestURL": "https://tohru.is-very-cute.moe/api/upload",
   "Headers": {
     "token": "",
     "albumid": "",
