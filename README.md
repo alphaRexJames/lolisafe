@@ -1,14 +1,14 @@
 # lolisafe, a small safe worth protecting
 
-[![safe.fiery.me](https://i.fiery.me/2Eeb.png)](https://safe.fiery.me)
+[![tohru.is-very-cute.moe](https://tohru.is-very-cute.moe/ZoivYbEW.png)](https://tohru.is-very-cute.moe)
 
 [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://raw.githubusercontent.com/WeebDev/lolisafe/master/LICENSE)
 
-## `safe.fiery.me`
+## `tohru.is-very-cute.moe`
 
 [![JavaScript Style Guide](https://cdn.rawgit.com/standard/standard/master/badge.svg)](https://github.com/standard/standard)
 
-This fork is the one being used at [https://safe.fiery.me](https://safe.fiery.me). If you are looking for the original, head to [WeebDev/lolisafe](https://github.com/WeebDev/lolisafe).
+This fork of a fork is the one being used at [https://tohru.is-very-cute.moe](https://tohru.is-very-cute.moe). Based off of [BobbyWibowo's fork](https://github.com/BobbyWibowo/lolisafe). If you are looking for the original, head to [WeebDev/lolisafe](https://github.com/WeebDev/lolisafe).
 
 If you want to use an existing lolisafe database with this fork, run `node ./database/migration.js` at least once to create the new columns introduced in this branch (don't forget to make a backup).
 
