@@ -2,6 +2,7 @@
   "extends": "stylelint-config-standard",
   "rules": {
     "declaration-block-trailing-semicolon": "never",
+    "function-name-case": null,
     "indentation": 2,
     "no-descending-specificity": null
   }

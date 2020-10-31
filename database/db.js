@@ -44,6 +44,7 @@ const init = async db => {
         table.integer('enabled')
         table.integer('timestamp')
         table.integer('permission')
+        table.integer('registration')
       })
   })
 
@@ -53,12 +54,14 @@ const init = async db => {
 
   if (!root) {
     const hash = await require('bcrypt').hash('changeme', 10)
+    const timestamp = Math.floor(Date.now() / 1000)
     await db.table('users').insert({
       username: 'root',
       password: hash,
       token: require('randomstring').generate(64),
-      timestamp: Math.floor(Date.now() / 1000),
-      permission: require('./../controllers/permissionController').permissions.superadmin
+      timestamp,
+      permission: require('./../controllers/permissionController').permissions.superadmin,
+      registration: timestamp
     })
   }
 }

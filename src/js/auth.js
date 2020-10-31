@@ -14,8 +14,14 @@ const page = {
 }
 
 page.unhide = () => {
-  document.querySelector('#loader').classList.add('is-hidden')
-  document.querySelector('#login').classList.remove('is-hidden')
+  const loaderSection = document.querySelector('#loader')
+  if (loaderSection) loaderSection.classList.add('is-hidden')
+
+  const loginSection = document.querySelector('#login.is-hidden')
+  if (loginSection) loginSection.classList.remove('is-hidden')
+
+  const floatingBtn = document.querySelector('.floating-home-button.is-hidden')
+  if (floatingBtn) floatingBtn.classList.remove('is-hidden')
 }
 
 // Handler for Axios errors
@@ -45,12 +51,10 @@ page.onAxiosError = error => {
 
 page.do = (dest, trigger) => {
   const user = page.user.value.trim()
-  if (!user)
-    return swal('An error occurred!', 'You need to specify a username.', 'error')
+  if (!user) return swal('An error occurred!', 'You need to specify a username.', 'error')
 
   const pass = page.pass.value.trim()
-  if (!pass)
-    return swal('An error occurred!', 'You need to specify a password.', 'error')
+  if (!pass) return swal('An error occurred!', 'You need to specify a password.', 'error')
 
   trigger.classList.add('is-loading')
   axios.post(`api/${dest}`, {
@@ -87,7 +91,7 @@ page.verify = () => {
   })
 }
 
-window.onload = () => {
+window.addEventListener('DOMContentLoaded', () => {
   page.user = document.querySelector('#user')
   page.pass = document.querySelector('#pass')
 
@@ -97,18 +101,25 @@ window.onload = () => {
     event.preventDefault()
   })
 
-  document.querySelector('#loginBtn').addEventListener('click', event => {
-    if (!form.checkValidity()) return
-    page.do('login', event.currentTarget)
-  })
+  const loginBtn = document.querySelector('#loginBtn')
+  if (loginBtn) {
+    loginBtn.addEventListener('click', event => {
+      if (!form.checkValidity()) return
+      page.do('login', event.currentTarget)
+    })
+  }
 
-  document.querySelector('#registerBtn').addEventListener('click', event => {
-    if (!form.checkValidity()) return
-    page.do('register', event.currentTarget)
-  })
+  const registerBtn = document.querySelector('#registerBtn')
+  if (registerBtn) {
+    registerBtn.addEventListener('click', event => {
+      if (!form.checkValidity()) {
+        // Workaround for browsers to display native form error messages
+        return loginBtn.click()
+      }
+      page.do('register', event.currentTarget)
+    })
+  }
 
-  if (page.token)
-    page.verify()
-  else
-    page.unhide()
-}
+  if (page.token) page.verify()
+  else page.unhide()
+})

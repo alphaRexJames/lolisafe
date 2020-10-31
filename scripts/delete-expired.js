@@ -25,7 +25,7 @@ const self = {
   const dryrun = self.mode === 0
   const quiet = self.mode === 2
 
-  const result = await utils.bulkDeleteExpired(dryrun)
+  const result = await utils.bulkDeleteExpired(dryrun, true)
 
   if (quiet) return
 

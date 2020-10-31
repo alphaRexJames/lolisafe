@@ -9,12 +9,14 @@
 
 {% extends "_layout.njk" %}
 
+{% set noJsUrl = '../' + album.url + '?nojs' %}
 {% set generateZips = config.uploads.generateZips %}
 {% set usingCdn = config.cloudflare and config.cloudflare.purgeCache %}
 
 {% block stylesheets %}
+<!-- Libs stylesheets -->
+<link rel="stylesheet" href="../libs/fontello/fontello.css{{ versions[1] }}">
 <!-- Stylesheets -->
-<link rel="stylesheet" href="../libs/bulma/bulma.min.css{{ versions[3] }}">
 <link rel="stylesheet" href="../css/style.css{{ versions[1] }}">
 <link rel="stylesheet" href="../css/thumbs.css{{ versions[1] }}">
 <link rel="stylesheet" href="../css/album.css{{ versions[1] }}">
@@ -26,12 +28,19 @@
 <script src="../libs/lazyload/lazyload.min.js{{ versions[3] }}"></script>
 <script src="../js/album.js{{ versions[1] }}"></script>
 <script src="../js/misc/utils.js{{ versions[1] }}"></script>
-{% endif %}
+{%- endif %}
+{% endblock %}
+
+{% block endmeta %}
+{% if not nojs -%}
+{% set noscriptRefreshUrl = noJsUrl %}
+{% include "_partial/noscript-refresh.njk" %}
+{%- endif %}
 {% endblock %}
 
 {% block content %}
 {{ super() }}
-<section class="section">
+<section class="section has-extra-bottom-padding">
   <div class="container">
     <nav class="level">
       <div class="level-left">
@@ -41,9 +50,9 @@
           </h1>
         </div>
         <div class="level-item">
-          <h1 id="count" class="subtitle">
+          <p id="count" class="subtitle">
             {{ files.length }} file{{ 's' if files.length !== 1 }} (<span class="file-size">{{ album.totalSize }} B</span>)
-          </h1>
+          </p>
         </div>
       </div>
 
@@ -86,7 +95,7 @@
     <div id="table" class="columns is-multiline is-mobile is-centered has-text-centered">
       {% for file in files %}
         <div class="image-container column">
-          <a class="image" href="{{ fileRoot }}/{{ file.name }}" target="_blank" rel="noopener">
+          <a class="image" href="{{ fileRoot }}/{{ file.name }}" target="_blank">
             {% if file.thumb -%}
               {% if nojs -%}
               <img alt="{{ file.name }}" src="{{ fileRoot }}/{{ file.thumb }}" width="200" height="200" loading="lazy">
@@ -94,11 +103,11 @@
               <img alt="{{ file.name }}" data-src="{{ fileRoot }}/{{ file.thumb }}">
               {%- endif %}
             {%- else -%}
-            <h1 class="title">{{ file.extname | default('N/A') }}</h1>
+            <h1 class="title">{{ file.extname or 'N/A' }}</h1>
             {%- endif %}
           </a>
           <div class="details">
-            <p><span class="name">{{ file.name }}</span></p>
+            <p class="name">{{ file.name }}</p>
             <p class="file-size">{{ file.size }} B</p>
           </div>
         </div>
@@ -114,17 +123,10 @@
   </div>
 </section>
 
+{% set floatingHomeHref = '..' %}
+{% include "_partial/floating-home.njk" %}
 {% if not nojs -%}
-<noscript>
-  <style>body > section:not(#noscript) { display: none !important; }</style>
-  <section id="noscript" class="hero is-fullheight">
-    <div class="hero-body">
-      <div class="container has-text-centered">
-        <p>You have JavaScript disabled, but this page requires JavaScript to function.</p>
-        <p>Please <a href="../{{ album.url }}?nojs">click here</a> if you want to view its No-JS version.</p>
-      </div>
-    </div>
-  </section>
-</noscript>
+{% set noscriptMessage = 'If you are not automatically redirected to its No-JS version, <a href="' + noJsUrl + '">click here</a>.' %}
+{% include "_partial/noscript.njk" %}
 {%- endif %}
 {% endblock %}

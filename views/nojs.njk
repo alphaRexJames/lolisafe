@@ -30,9 +30,9 @@
       <h1 class="title">{{ globals.name }}</h1>
       <h2 class="subtitle">{{ globals.home_subtitle | safe }}</h2>
 
-      <h3 class="subtitle" id="maxSize">
+      <p class="subtitle" id="maxSize">
         Maximum total size per upload attempt is {{ noJsMaxSizeInt or maxSizeInt }} MB
-      </h3>
+      </p>
 
       <div class="columns is-gapless">
         <div class="column is-hidden-mobile"></div>
@@ -68,7 +68,7 @@
               {%- endif %}
               {% if file.url -%}
               <p class="link">
-                <a href="{{ file.url }}" target="_blank" rel="noopener">{{ file.url }}</a>
+                <a href="{{ file.url }}" target="_blank">{{ file.url }}</a>
               </p>
               {%- endif %}
             </div>

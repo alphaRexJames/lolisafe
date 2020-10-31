@@ -1,6 +1,8 @@
-.section {
-  background: none
-}
+@charset "utf-8";
+
+@import "_variables";
+
+/** Main **/
 
 @media screen and (max-width: 768px) {
   .description {

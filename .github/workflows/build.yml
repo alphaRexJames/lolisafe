@@ -1,0 +1,49 @@
+name: build
+
+on:
+  push:
+    branches:
+      - safe.fiery.me
+    paths:
+      - 'src/**/*.css'
+      - 'src/**/*.js'
+      - 'src/**/*.scss'
+      - 'src/versions.json'
+
+jobs:
+  build:
+    name: Build client assets and bump v1 version string
+    runs-on: ubuntu-18.04
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Use Node.js
+        uses: actions/setup-node@v1
+        with:
+          node-version: '12.x'
+
+      - name: Get yarn cache directory path
+        id: yarn-cache-dir-path
+        run: echo "::set-output name=dir::$(yarn cache dir)"
+
+      - uses: actions/cache@v2
+        id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+        with:
+          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: yarn build
+        run: yarn build
+
+      - uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: 'AUTO: Rebuilt client assets and bumped v1 version string'
+          commit_user_name: loli-bot
+          commit_user_email: hi@fiery.me
+        env:
+          CI: true

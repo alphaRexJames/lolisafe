@@ -4,6 +4,7 @@ const path = require('path')
 const randomstring = require('randomstring')
 const Zip = require('jszip')
 const paths = require('./pathsController')
+const perms = require('./permissionController')
 const utils = require('./utilsController')
 const config = require('./../config')
 const logger = require('./../logger')
@@ -28,14 +29,10 @@ const zipOptions = config.uploads.jsZipOptions
 zipOptions.type = 'nodebuffer'
 
 // Apply fallbacks for missing config values
-if (zipOptions.streamFiles === undefined)
-  zipOptions.streamFiles = true
-if (zipOptions.compression === undefined)
-  zipOptions.compression = 'DEFLATE'
-if (zipOptions.compressionOptions === undefined)
-  zipOptions.compressionOptions = {}
-if (zipOptions.compressionOptions.level === undefined)
-  zipOptions.compressionOptions.level = 1
+if (zipOptions.streamFiles === undefined) zipOptions.streamFiles = true
+if (zipOptions.compression === undefined) zipOptions.compression = 'DEFLATE'
+if (zipOptions.compressionOptions === undefined) zipOptions.compressionOptions = {}
+if (zipOptions.compressionOptions.level === undefined) zipOptions.compressionOptions.level = 1
 
 self.zipEmitters = new Map()
 
@@ -50,8 +47,7 @@ class ZipEmitter extends EventEmitter {
 self.getUniqueRandomName = async () => {
   for (let i = 0; i < utils.idMaxTries; i++) {
     const identifier = randomstring.generate(config.uploads.albumIdentifierLength)
-    if (self.onHold.has(identifier))
-      continue
+    if (self.onHold.has(identifier)) continue
 
     // Put token on-hold (wait for it to be inserted to DB)
     self.onHold.add(identifier)
@@ -76,39 +72,101 @@ self.list = async (req, res, next) => {
   const user = await utils.authorize(req, res)
   if (!user) return
 
-  let fields = ['id', 'name']
-  if (req.params.sidebar === undefined)
-    fields = fields.concat(['timestamp', 'identifier', 'editedAt', 'download', 'public', 'description'])
+  const all = req.headers.all === '1'
+  const sidebar = req.headers.sidebar
+  const ismoderator = perms.is(user, 'moderator')
+  if (all && !ismoderator) return res.status(403).end()
 
-  const albums = await db.table('albums')
-    .select(fields)
-    .where({
-      enabled: 1,
-      userid: user.id
-    })
-
-  if (req.params.sidebar !== undefined)
-    return res.json({ success: true, albums })
-
-  const albumids = {}
-  for (const album of albums) {
-    album.download = album.download !== 0
-    album.public = album.public !== 0
-    album.files = 0
-    // Map by IDs
-    albumids[album.id] = album
+  const filter = function () {
+    if (!all) {
+      this.where({
+        enabled: 1,
+        userid: user.id
+      })
+    }
   }
 
-  const files = await db.table('files')
-    .whereIn('albumid', Object.keys(albumids))
-    .select('albumid')
+  try {
+    // Query albums count for pagination
+    const count = await db.table('albums')
+      .where(filter)
+      .count('id as count')
+      .then(rows => rows[0].count)
+    if (!count) return res.json({ success: true, albums: [], count })
 
-  // Increment files count
-  for (const file of files)
-    if (albumids[file.albumid])
-      albumids[file.albumid].files++
+    const fields = ['id', 'name']
 
-  return res.json({ success: true, albums, homeDomain })
+    let albums
+    if (sidebar) {
+      albums = await db.table('albums')
+        .where(filter)
+        .limit(9)
+        .select(fields)
+
+      return res.json({ success: true, albums, count })
+    } else {
+      let offset = Number(req.params.page)
+      if (isNaN(offset)) offset = 0
+      else if (offset < 0) offset = Math.max(0, Math.ceil(count / 25) + offset)
+
+      fields.push('identifier', 'enabled', 'timestamp', 'editedAt', 'download', 'public', 'description')
+      if (all) fields.push('userid')
+
+      albums = await db.table('albums')
+        .where(filter)
+        .limit(25)
+        .offset(25 * offset)
+        .select(fields)
+    }
+
+    const albumids = {}
+    for (const album of albums) {
+      album.download = album.download !== 0
+      album.public = album.public !== 0
+      album.uploads = 0
+
+      // Map by IDs
+      albumids[album.id] = album
+    }
+
+    const uploads = await db.table('files')
+      .whereIn('albumid', Object.keys(albumids))
+      .select('albumid')
+
+    for (const upload of uploads) {
+      if (albumids[upload.albumid]) {
+        albumids[upload.albumid].uploads++
+      }
+    }
+
+    // If we are not listing all albums, send response
+    if (!all) return res.json({ success: true, albums, count, homeDomain })
+
+    // Otherwise proceed to querying usernames
+    const userids = albums
+      .map(album => album.userid)
+      .filter((v, i, a) => {
+        return v !== null && v !== undefined && v !== '' && a.indexOf(v) === i
+      })
+
+    // If there are no albums attached to a registered user, send response
+    if (!userids.length) return res.json({ success: true, albums, count, homeDomain })
+
+    // Query usernames of user IDs from currently selected files
+    const usersTable = await db.table('users')
+      .whereIn('id', userids)
+      .select('id', 'username')
+
+    const users = {}
+    for (const user of usersTable) {
+      users[user.id] = user.username
+    }
+
+    return res.json({ success: true, albums, count, users, homeDomain })
+  } catch (error) {
+    logger.error(error)
+    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+  }
 }
 
 self.create = async (req, res, next) => {
@@ -119,8 +177,7 @@ self.create = async (req, res, next) => {
     ? utils.escape(req.body.name.trim().substring(0, self.titleMaxLength))
     : ''
 
-  if (!name)
-    return res.json({ success: false, description: 'No album name specified.' })
+  if (!name) return res.json({ success: false, description: 'No album name specified.' })
 
   try {
     const album = await db.table('albums')
@@ -131,8 +188,7 @@ self.create = async (req, res, next) => {
       })
       .first()
 
-    if (album)
-      return res.json({ success: false, description: 'There is already an album with that name.' })
+    if (album) return res.json({ success: false, description: 'There is already an album with that name.' })
 
     const identifier = await self.getUniqueRandomName()
 
@@ -161,13 +217,17 @@ self.create = async (req, res, next) => {
 }
 
 self.delete = async (req, res, next) => {
+  // Map /delete requests to /disable route
+  return self.disable(req, res, next)
+}
+
+self.disable = async (req, res, next) => {
   const user = await utils.authorize(req, res)
   if (!user) return
 
   const id = req.body.id
   const purge = req.body.purge
-  if (!Number.isFinite(id))
-    return res.json({ success: false, description: 'No album specified.' })
+  if (!Number.isFinite(id)) return res.json({ success: false, description: 'No album specified.' })
 
   try {
     if (purge) {
@@ -180,8 +240,7 @@ self.delete = async (req, res, next) => {
       if (files.length) {
         const ids = files.map(file => file.id)
         const failed = await utils.bulkDeleteFromDb('id', ids, user)
-        if (failed.length)
-          return res.json({ success: false, failed })
+        if (failed.length) return res.json({ success: false, failed })
       }
       utils.invalidateStatsCache('uploads')
     }
@@ -193,6 +252,7 @@ self.delete = async (req, res, next) => {
       })
       .update('enabled', 0)
     utils.invalidateAlbumsCache([id])
+    utils.invalidateStatsCache('albums')
 
     const identifier = await db.table('albums')
       .select('identifier')
@@ -218,37 +278,44 @@ self.edit = async (req, res, next) => {
   const user = await utils.authorize(req, res)
   if (!user) return
 
+  const ismoderator = perms.is(user, 'moderator')
+
   const id = parseInt(req.body.id)
-  if (isNaN(id))
-    return res.json({ success: false, description: 'No album specified.' })
+  if (isNaN(id)) return res.json({ success: false, description: 'No album specified.' })
 
   const name = typeof req.body.name === 'string'
     ? utils.escape(req.body.name.trim().substring(0, self.titleMaxLength))
     : ''
 
-  if (!name)
-    return res.json({ success: false, description: 'No name specified.' })
+  if (!name) return res.json({ success: false, description: 'No name specified.' })
+
+  const filter = function () {
+    this.where('id', id)
+
+    if (!ismoderator) {
+      this.andWhere({
+        enabled: 1,
+        userid: user.id
+      })
+    }
+  }
 
   try {
     const album = await db.table('albums')
-      .where({
-        id,
-        userid: user.id,
-        enabled: 1
-      })
+      .where(filter)
       .first()
 
-    if (!album)
+    if (!album) {
       return res.json({ success: false, description: 'Could not get album with the specified ID.' })
-    else if (album.id !== id)
+    } else if (album.id !== id) {
       return res.json({ success: false, description: 'Name already in use.' })
-    else if (req._old && (album.id === id))
+    } else if (req._old && (album.id === id)) {
       // Old rename API
       return res.json({ success: false, description: 'You did not specify a new name.' })
+    }
 
     const update = {
       name,
-      editedAt: Math.floor(Date.now() / 1000),
       download: Boolean(req.body.download),
       public: Boolean(req.body.public),
       description: typeof req.body.description === 'string'
@@ -256,16 +323,19 @@ self.edit = async (req, res, next) => {
         : ''
     }
 
-    if (req.body.requestLink)
+    if (ismoderator) {
+      update.enabled = Boolean(req.body.enabled)
+    }
+
+    if (req.body.requestLink) {
       update.identifier = await self.getUniqueRandomName()
+    }
 
     await db.table('albums')
-      .where({
-        id,
-        userid: user.id
-      })
+      .where(filter)
       .update(update)
     utils.invalidateAlbumsCache([id])
+    utils.invalidateStatsCache('albums')
 
     if (req.body.requestLink) {
       self.onHold.delete(update.identifier)
@@ -275,10 +345,9 @@ self.edit = async (req, res, next) => {
         const oldZip = path.join(paths.zips, `${album.identifier}.zip`)
         const newZip = path.join(paths.zips, `${update.identifier}.zip`)
         await paths.rename(oldZip, newZip)
-      } catch (err) {
+      } catch (error) {
         // Re-throw error
-        if (err.code !== 'ENOENT')
-          throw err
+        if (error.code !== 'ENOENT') throw error
       }
 
       return res.json({
@@ -302,8 +371,9 @@ self.rename = async (req, res, next) => {
 
 self.get = async (req, res, next) => {
   const identifier = req.params.identifier
-  if (identifier === undefined)
+  if (identifier === undefined) {
     return res.status(401).json({ success: false, description: 'No identifier provided.' })
+  }
 
   try {
     const album = await db.table('albums')
@@ -313,29 +383,31 @@ self.get = async (req, res, next) => {
       })
       .first()
 
-    if (!album)
+    if (!album) {
       return res.json({
         success: false,
         description: 'Album not found.'
       })
-    else if (album.public === 0)
+    } else if (album.public === 0) {
       return res.status(403).json({
         success: false,
         description: 'This album is not available for public.'
       })
+    }
 
     const title = album.name
     const files = await db.table('files')
       .select('name')
       .where('albumid', album.id)
-      .orderBy('id', 'DESC')
+      .orderBy('id', 'desc')
 
     for (const file of files) {
       file.file = `${config.domain}/${file.name}`
 
       const extname = utils.extname(file.name)
-      if (utils.mayGenerateThumb(extname))
+      if (utils.mayGenerateThumb(extname)) {
         file.thumb = `${config.domain}/thumbs/${file.name.slice(0, -extname.length)}.png`
+      }
     }
 
     return res.json({
@@ -352,27 +424,21 @@ self.get = async (req, res, next) => {
 
 self.generateZip = async (req, res, next) => {
   const versionString = parseInt(req.query.v)
-  const download = (filePath, fileName) => {
-    const headers = {}
-    if (config.cacheControl && versionString > 0) {
-      headers['Access-Control-Allow-Origin'] = '*'
-      headers['Cache-Control'] = 'public, max-age=2592000, must-revalidate, proxy-revalidate, immutable, stale-while-revalidate=86400, stale-if-error=604800'
-    }
-    return res.download(filePath, fileName, { headers })
-  }
 
   const identifier = req.params.identifier
-  if (identifier === undefined)
+  if (identifier === undefined) {
     return res.status(401).json({
       success: false,
       description: 'No identifier provided.'
     })
+  }
 
-  if (!config.uploads.generateZips)
+  if (!config.uploads.generateZips) {
     return res.status(401).json({
       success: false,
       description: 'Zip generation disabled.'
     })
+  }
 
   try {
     const album = await db.table('albums')
@@ -382,36 +448,35 @@ self.generateZip = async (req, res, next) => {
       })
       .first()
 
-    if (!album)
+    if (!album) {
       return res.json({ success: false, description: 'Album not found.' })
-    else if (album.download === 0)
+    } else if (album.download === 0) {
       return res.json({ success: false, description: 'Download for this album is disabled.' })
+    }
 
-    if ((isNaN(versionString) || versionString <= 0) && album.editedAt)
+    if ((isNaN(versionString) || versionString <= 0) && album.editedAt) {
       return res.redirect(`${album.identifier}?v=${album.editedAt}`)
+    }
 
-    // TODO: editedAt column will now be updated whenever
-    // a user is simply editing the album's name/description.
-    // Perhaps add a new timestamp column that will only be updated
-    // when the files in the album are actually modified?
-    if (album.zipGeneratedAt > album.editedAt)
+    if (album.zipGeneratedAt > album.editedAt) {
       try {
         const filePath = path.join(paths.zips, `${identifier}.zip`)
         await paths.access(filePath)
-        return download(filePath, `${album.name}.zip`)
+        return res.download(filePath, `${album.name}.zip`)
       } catch (error) {
         // Re-throw error
-        if (error.code !== 'ENOENT')
-          throw error
+        if (error.code !== 'ENOENT') throw error
       }
+    }
 
     if (self.zipEmitters.has(identifier)) {
       logger.log(`Waiting previous zip task for album: ${identifier}.`)
       return self.zipEmitters.get(identifier).once('done', (filePath, fileName, json) => {
-        if (filePath && fileName)
-          download(filePath, fileName)
-        else if (json)
+        if (filePath && fileName) {
+          res.download(filePath, fileName)
+        } else if (json) {
           res.json(json)
+        }
       })
     }
 
@@ -481,7 +546,7 @@ self.generateZip = async (req, res, next) => {
     const fileName = `${album.name}.zip`
 
     self.zipEmitters.get(identifier).emit('done', filePath, fileName)
-    return download(filePath, fileName)
+    return res.download(filePath, fileName)
   } catch (error) {
     logger.error(error)
     return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
@@ -493,8 +558,9 @@ self.addFiles = async (req, res, next) => {
   if (!user) return
 
   const ids = req.body.ids
-  if (!Array.isArray(ids) || !ids.length)
+  if (!Array.isArray(ids) || !ids.length) {
     return res.json({ success: false, description: 'No files specified.' })
+  }
 
   let albumid = parseInt(req.body.albumid)
   if (isNaN(albumid) || albumid < 0) albumid = null
@@ -506,16 +572,18 @@ self.addFiles = async (req, res, next) => {
       const album = await db.table('albums')
         .where('id', albumid)
         .where(function () {
-          if (user.username !== 'root')
+          if (user.username !== 'root') {
             this.where('userid', user.id)
+          }
         })
         .first()
 
-      if (!album)
+      if (!album) {
         return res.json({
           success: false,
           description: 'Album does not exist or it does not belong to the user.'
         })
+      }
 
       albumids.push(albumid)
     }
@@ -531,24 +599,27 @@ self.addFiles = async (req, res, next) => {
       .update('albumid', albumid)
 
     files.forEach(file => {
-      if (file.albumid && !albumids.includes(file.albumid))
+      if (file.albumid && !albumids.includes(file.albumid)) {
         albumids.push(file.albumid)
+      }
     })
 
     await db.table('albums')
       .whereIn('id', albumids)
       .update('editedAt', Math.floor(Date.now() / 1000))
+    utils.invalidateAlbumsCache(albumids)
 
     return res.json({ success: true, failed })
   } catch (error) {
     logger.error(error)
-    if (failed.length === ids.length)
+    if (failed.length === ids.length) {
       return res.json({
         success: false,
         description: `Could not ${albumid === null ? 'add' : 'remove'} any files ${albumid === null ? 'to' : 'from'} the album.`
       })
-    else
+    } else {
       return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    }
   }
 }
 

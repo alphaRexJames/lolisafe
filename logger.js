@@ -45,4 +45,18 @@ self.error = (content, options = {}) => {
   write(content, options)
 }
 
+self.debug = (...args) => {
+  const options = {
+    colors: true,
+    depth: Infinity
+  }
+  if (args.length > 1 && typeof args[args.length - 1] === 'object') {
+    Object.assign(options, args[args.length - 1])
+    args.splice(args.length - 1, 1)
+  }
+  for (const arg of args) {
+    console.log(inspect(arg, options))
+  }
+}
+
 module.exports = self

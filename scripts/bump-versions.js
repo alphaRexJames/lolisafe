@@ -1,9 +1,21 @@
 const { promisify } = require('util')
 const fs = require('fs')
 const path = require('path')
-const utils = require('../controllers/utilsController')
 
 const self = {
+  // This is a parallel of utilsController.js->stripIndents().
+  // Added here so that this script won't have to import the said controller.
+  stripIndents: string => {
+    if (!string) return
+    const result = string.replace(/^[^\S\n]+/gm, '')
+    const match = result.match(/^[^\S\n]*(?=\S)/gm)
+    const indent = match && Math.min(...match.map(el => el.length))
+    if (indent) {
+      const regexp = new RegExp(`^.{${indent}}`, 'gm')
+      return result.replace(regexp, '')
+    }
+    return result
+  },
   access: promisify(fs.access),
   readFile: promisify(fs.readFile),
   writeFile: promisify(fs.writeFile),
@@ -33,7 +45,7 @@ const self = {
   }
 
   if (args.includes('--help') || args.includes('-h') || !Object.keys(self.types).length)
-    return console.log(utils.stripIndents(`
+    return console.log(self.stripIndents(`
       Bump version strings for client-side assets.
 
       Usage:

@@ -7,7 +7,7 @@ const utilsController = require('./../controllers/utilsController')
 const config = require('./../config')
 
 routes.get('/check', (req, res, next) => {
-  return res.json({
+  const obj = {
     private: config.private,
     enableUserAccounts: config.enableUserAccounts,
     maxSize: config.uploads.maxSize,
@@ -15,7 +15,9 @@ routes.get('/check', (req, res, next) => {
     temporaryUploadAges: config.uploads.temporaryUploadAges,
     fileIdentifierLength: config.uploads.fileIdentifierLength,
     stripTags: config.uploads.stripTags
-  })
+  }
+  if (utilsController.clientVersion) obj.version = utilsController.clientVersion
+  return res.json(obj)
 })
 
 routes.post('/login', (req, res, next) => authController.verify(req, res, next))
@@ -25,6 +27,7 @@ routes.get('/uploads', (req, res, next) => uploadController.list(req, res, next)
 routes.get('/uploads/:page', (req, res, next) => uploadController.list(req, res, next))
 routes.post('/upload', (req, res, next) => uploadController.upload(req, res, next))
 routes.post('/upload/delete', (req, res, next) => uploadController.delete(req, res, next))
+// routes.get('/upload/delete/:name', (req, res, next) => uploadController.delete(req, res, next))
 routes.post('/upload/bulkdelete', (req, res, next) => uploadController.bulkDelete(req, res, next))
 routes.post('/upload/finishchunks', (req, res, next) => uploadController.finishChunks(req, res, next))
 routes.post('/upload/:albumid', (req, res, next) => uploadController.upload(req, res, next))
@@ -33,10 +36,11 @@ routes.get('/album/zip/:identifier', (req, res, next) => albumsController.genera
 routes.get('/album/:id', (req, res, next) => uploadController.list(req, res, next))
 routes.get('/album/:id/:page', (req, res, next) => uploadController.list(req, res, next))
 routes.get('/albums', (req, res, next) => albumsController.list(req, res, next))
-routes.get('/albums/:sidebar', (req, res, next) => albumsController.list(req, res, next))
+routes.get('/albums/:page', (req, res, next) => albumsController.list(req, res, next))
 routes.post('/albums', (req, res, next) => albumsController.create(req, res, next))
 routes.post('/albums/addfiles', (req, res, next) => albumsController.addFiles(req, res, next))
 routes.post('/albums/delete', (req, res, next) => albumsController.delete(req, res, next))
+routes.post('/albums/disable', (req, res, next) => albumsController.disable(req, res, next))
 routes.post('/albums/edit', (req, res, next) => albumsController.edit(req, res, next))
 routes.post('/albums/rename', (req, res, next) => albumsController.rename(req, res, next))
 routes.get('/albums/test', (req, res, next) => albumsController.test(req, res, next))
@@ -47,6 +51,7 @@ routes.get('/filelength/config', (req, res, next) => authController.getFileLengt
 routes.post('/filelength/change', (req, res, next) => authController.changeFileLength(req, res, next))
 routes.get('/users', (req, res, next) => authController.listUsers(req, res, next))
 routes.get('/users/:page', (req, res, next) => authController.listUsers(req, res, next))
+routes.post('/users/create', (req, res, next) => authController.createUser(req, res, next))
 routes.post('/users/edit', (req, res, next) => authController.editUser(req, res, next))
 routes.post('/users/disable', (req, res, next) => authController.disableUser(req, res, next))
 routes.post('/users/delete', (req, res, next) => authController.deleteUser(req, res, next))

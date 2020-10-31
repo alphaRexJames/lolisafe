@@ -4,7 +4,24 @@
 {% set keywords = "upload,lolisafe,file,images,hosting,thatawesomeguy173,tohru" %}
 
 {# Used in home.njk and nojs.njk #}
-{% set home_subtitle = "" %}
+{% set home_subtitle = "" %} {# HTML supported #}
+
+{# Used in faq.njk and cookiepolicy.njk #}
+{% set root_domain = "is-very-cute.moe" %}
+{% set whole_faq = root_domain + " website and sub-domains" %}
+{% set whole_cookie = "This site and " + root_domain + " website and sub-domains" %}
+{% set email = "newgen.extraFaith@gmail.com" %}
+
+{% set fork_repo = "https://github.com/ThatAwesomeGuy173/lolisafe" %}
+{% set fork_host = "GitHub" %}
+{% set fork_issues = fork_repo + "/issues/new/choose" %}
+
+{% set takedowns_url = false %}
+{% set server_location = "New Jersey, <strong>United States</strong>" %} {# HTML supported #}
+{% set support = false %} {# HTML supported #}
+
+{% set enable_faq_banned_categories = false %}
+{% set enable_faq_tor = false %}
 
 {#
   These are the footer links in the homepage and the No-JS uploader (home.njk & nojs.njk respectively).

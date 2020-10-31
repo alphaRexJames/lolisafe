@@ -3,12 +3,14 @@ const gulp = require('gulp')
 const cssnano = require('cssnano')
 const del = require('del')
 const buble = require('gulp-buble')
-const eslint = require('gulp-eslint')
+const eslint = require('gulp-eslint7')
 const gulpif = require('gulp-if')
 const nodemon = require('gulp-nodemon')
 const postcss = require('gulp-postcss')
 const postcssPresetEnv = require('postcss-preset-env')
 const replace = require('gulp-replace')
+const sass = require('gulp-sass')
+const sassCompiler = require('node-sass')
 const sourcemaps = require('gulp-sourcemaps')
 const stylelint = require('gulp-stylelint')
 const terser = require('gulp-terser')
@@ -24,19 +26,21 @@ const postcssPlugins = [
   postcssPresetEnv()
 ]
 
+sass.compiler = sassCompiler
+
 // Minify on production
-if (process.env.NODE_ENV !== 'development')
+if (process.env.NODE_ENV !== 'development') {
   postcssPlugins.push(cssnano())
+}
 
 /** TASKS: LINT */
 
-gulp.task('lint:js', () => {
-  return gulp.src('./src/**/*.js', {
-    ignore: './src/libs/**/*'
-  })
-    .pipe(eslint())
-    .pipe(eslint.format('stylish'))
-    .pipe(eslint.failAfterError())
+gulp.task('lint:sass', () => {
+  return gulp.src('./src/**/*.scss')
+    .pipe(stylelint({
+      failAfterError: true,
+      reporters: [{ formatter: 'verbose', console: true }]
+    }))
 })
 
 gulp.task('lint:css', () => {
@@ -49,11 +53,20 @@ gulp.task('lint:css', () => {
     }))
 })
 
+gulp.task('lint:js', () => {
+  return gulp.src('./src/**/*.js', {
+    ignore: './src/libs/**/*'
+  })
+    .pipe(eslint())
+    .pipe(eslint.format('stylish'))
+    .pipe(eslint.failAfterError())
+})
+
 // Set _settle to true, so that if one of the parallel tasks fails,
 // the other one won't exit prematurely (this is a bit awkward).
 // https://github.com/gulpjs/gulp/issues/1487#issuecomment-466621047
 gulp._settle = true
-gulp.task('lint', gulp.parallel('lint:js', 'lint:css'))
+gulp.task('lint', gulp.parallel('lint:sass', 'lint:css', 'lint:js'))
 gulp._settle = false
 
 /** TASKS: CLEAN */
@@ -81,6 +94,17 @@ gulp.task('clean:rest', () => {
 gulp.task('clean', gulp.parallel('clean:css', 'clean:js', 'clean:rest'))
 
 /** TASKS: BUILD */
+
+gulp.task('build:sass', function () {
+  return gulp.src('./src/**/*.scss', {
+    ignore: '_*.scss'
+  })
+    .pipe(sourcemaps.init())
+    .pipe(sass().on('error', sass.logError))
+    .pipe(postcss(postcssPlugins))
+    .pipe(sourcemaps.write('.'))
+    .pipe(gulp.dest(dist))
+})
 
 gulp.task('build:css', () => {
   return gulp.src('./src/**/*.css', {
@@ -112,7 +136,7 @@ gulp.task('build:js', () => {
     .pipe(gulp.dest(dist))
 })
 
-gulp.task('build', gulp.parallel('build:css', 'build:fontello', 'build:js'))
+gulp.task('build', gulp.parallel('build:sass', 'build:css', 'build:fontello', 'build:js'))
 
 /** TASKS: VERSION STRINGS */
 
@@ -130,8 +154,9 @@ gulp.task('default', gulp.series('lint', 'clean', 'build', 'exec:bump-versions')
 
 gulp.task('watch:css', () => {
   return gulp.watch([
-    'src/**/*.css'
-  ], gulp.series('clean:css', 'build:css', 'build:fontello'))
+    'src/**/*.css',
+    'src/**/*.scss'
+  ], gulp.series('clean:css', 'build:sass', 'build:css', 'build:fontello'))
 })
 
 gulp.task('watch:js', () => {

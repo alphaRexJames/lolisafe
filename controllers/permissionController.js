@@ -11,8 +11,7 @@ self.permissions = {
 // returns true if user is in the group OR higher
 self.is = (user, group) => {
   // root bypass
-  if (user.username === 'root')
-    return true
+  if (user.username === 'root') return true
 
   const permission = user.permission || 0
   return permission >= self.permissions[group]

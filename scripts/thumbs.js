@@ -51,12 +51,17 @@ self.getFiles = async directory => {
       cfcache: 0 = do not clear cloudflare cache (default), 1 = clear cloudflare cache
     `))
 
+  console.log('Looking through existing thumbnails\u2026')
   const uploads = await self.getFiles(paths.uploads)
   let thumbs = await self.getFiles(paths.thumbs)
   thumbs = thumbs.map(thumb => {
     const extname = path.extname(thumb)
     return thumb.slice(0, -extname.length)
   })
+
+  console.log(`Found ${thumbs.length} existing thumbnails (may include placeholder symlinks).`)
+  if (!self.verbose)
+    console.log('Verbose logging disabled! Please be patient, this script may appear to be frozen but is actually working in the background.')
 
   const succeeded = []
   let error = 0

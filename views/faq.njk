@@ -8,125 +8,113 @@
 {% set extensionsFilterMode = config.extensionsFilterMode %}
 {% set extensionsFilter = config.extensionsFilter %}
 
+{% block stylesheets %}
+<!-- Libs stylesheets -->
+<link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+{{ super() }}
+{% endblock %}
+
 {% block content %}
 {{ super() }}
 <section class="section">
   <div class="container has-text-left">
-    <h2 class='subtitle'>What is tohru.is-very-cute.moe?</h2>
+    <h1 class="title">
+      Frequently Asked Questions
+    </h1>
+    <hr>
+
+    <h2 id="general" class='title is-spaced'>General</h2>
+
+    <h3 class="subtitle has-text-white-ter">What is {{ globals.name }}?</h3>
     <article class="message">
       <div class="message-body">
         This is a personal fork of <a href="https://github.com/BobbyWibowo/lolisafe" target="_blank" rel="noopener">BobbyWibowo's fork</a> of <a href="https://github.com/WeebDev/lolisafe" target="_blank" rel="noopener">lolisafe</a>.<br>
-        GitHub repository of this fork is located <a href="https://github.com/ThatAwesomeGuy173/lolisafe/tree/tohru" target="_blank" rel="noopener">here</a>.
+        {{ globals.fork_host }} repository of the fork is located <a href="{{ globals.fork_repo }}" target="_blank" rel="noopener">here</a>.
       </div>
     </article>
 
-    <h2 class='subtitle'>Will you keep my files forever?</h2>
+    {% if globals.enable_faq_banned_categories -%}
+    <h3 class="subtitle has-text-white-ter">Are there any <strong>banned categories</strong>?</h3>
     <article class="message">
       <div class="message-body">
-        Unless I receive a copyright complain, or some other bullshit, I will.
+        Banned categories are the following, <i>but not limited to</i>:<br>
+        <strong>Child pornography.</strong><br>
+        Virus/malware, or anything Google Safe Search would categorize as <i>unwanted software</i> *.<br>
+        Copyrighted content. Meaning I will respond to copyright takedown notices,.. if any.<br>
+        <strong>Full-length episodes of cartoons, TV shows or movies of any kind.</strong> Japanese, Chinese, Antarcticaness, I don't care.<br>
+        CD drama audio files. I only know of Japanese shows that have these, but regardless of nationality.<br>
+        <br>
+        Any of such uploads, when found, will be purged immediately without any prior notice.<br>
+        Repeat offenders will have their IPs permanently blocked from accessing {{ globals.whole_faq }}.<br>
+        For child pornography specifically, first offenders will immediately be blocked permanently.<br>
+        <br>
+        * When Google Safe Search detects <i>unwanted software</i>, Chrome's users will be alerted that anything they download from {{ globals.whole_faq }} are <i>unsafe</i>.
       </div>
     </article>
-{#
-    <h2 class='subtitle'>How can I keep track of my uploads?</h2>
+    {%- endif %}
+
+    <h3 class="subtitle has-text-white-ter">Will you keep my uploads forever?</h3>
     <article class="message">
       <div class="message-body">
-        Simply create a user on the site and every upload will be associated with your account, granting you access to your uploaded files through our dashboard.<br>
-        You will <strong>need</strong> to do this if you ever want to delete your own uploads in the future, unless you choose to use temporary uploads.
+        Unless the uploads are included within the banned categories above, or some other bullshit, I will.<br>
+        {% if globals.takedowns_url -%}
+        In case I have to take down any uploads, I will log their names and explanations in <a href="{{ globals.takedowns_url }}" target="_blank">here</a>.<br>
+        {%- endif %}
+        <br>
+        Otherwise, we also have temporary uploads feature, with which you can have your uploads be automatically deleted after a period of time.<br>
+        It is disabled by default, but you can configure it through our homepage uploader's Config tab.
       </div>
     </article>
 
-    <h2 class='subtitle'>What are albums?</h2>
+    <h3 class="subtitle has-text-white-ter">How can I keep track of my uploads?</h3>
     <article class="message">
       <div class="message-body">
-        Albums are a simple way of sorting uploads together.<br>
-        You can then share public links to these albums, to allow everyone else to view a pretty listing of the uploads in them.<br>
-        <br>
-        As long as you are logged in, you can create albums through our homepage or dashboard,<br>
-        then afterwards you can use them with our <a href="https://addons.mozilla.org/en-US/firefox/addon/lolisafe/" target="_blank" rel="noopener">Firefox extension</a> or <a href="https://chrome.google.com/webstore/detail/loli-safe-uploader/enkkmplljfjppcdaancckgilmgoiofnj" target="_blank" rel="noopener">Chrome extension</a>,<br>
-        which will enable you to <strong>right click -> send file to safe</strong>, or to a desired album if you have any.<br>
-        With the Chrome extension, you will have to manually set the domain in the extension's settings to <strong>https://safe.fiery.me</strong>.<br>
-        <br>
-        If you use a Linux desktop, we also have a bash uploader that supports uploading to albums.<br>
-        You can learn more about it <a href="https://github.com/BobbyWibowo/uguush" target="_blank" rel="noopener">here</a>.
+        Simply create a user on the site and every uploads will be associated with your account, granting you access to your uploads through our Dashboard.<br>
+        You will <strong>have</strong> to do this if you ever want to delete your own uploads in the future, unless you choose to use the temporary uploads feature.
       </div>
     </article>
-#}
-    <h2 class='subtitle'>Why should I use this?</h2>
+
+    <h3 class="subtitle has-text-white-ter">What are albums?</h3>
+    <article class="message">
+      <div class="message-body">
+        Albums are a simple way of sorting/categorizing uploads together.<br>
+        You can share public links to these albums, allowing everyone else to view pretty listings of the uploads in them.<br>
+        Albums can also be downloaded as ZIP-archives.<br>
+        Both of these features can be toggled per-album basis from the Dashboard.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Why should I use this?</h3>
     <article class="message">
       <div class="message-body">
         I don't know.
       </div>
     </article>
-{#
-    <h2 class='subtitle'>I saw something too illegal for my tastes here, what should I do?</h2>
+
+    <h3 class="subtitle has-text-white-ter">I saw something too illegal for my tastes here, what should I do?</h3>
     <article class="message">
       <div class="message-body">
-        Send a strongly worded email to <a href="mailto:bobby@fiery.me">bobby@fiery.me</a> and I will try to get back to you within <strong>48 hours</strong>.
+        Send a strongly worded email to <a href="mailto:{{ globals.email }}">{{ globals.email }}</a> and I will try to get back to you within <strong>48 hours</strong>.<br>
+        These include copyright takedown notices and reports about uploads violating banned categories.
       </div>
     </article>
 
-    <h2 class='subtitle'>I found a bug! -or- I want to request a feature!</h2>
+    {% if globals.support -%}
+    <h3 class="subtitle has-text-white-ter">How can I support {{ globals.name }}?</h3>
     <article class="message">
       <div class="message-body">
-        Feel free to create a GitHub issue <a href="https://github.com/BobbyWibowo/lolisafe/issues/new/choose" target="_blank" rel="noopener">here</a>.</br>
-        Or if you don't want to use GitHub, you can also contact me through my email above.
-      </div>
-    </article>
-
-    <h2 class='subtitle'>How do I delete my own account <strong>and</strong> all the uploads associated with it?</h2>
-    <article class="message">
-      <div class="message-body">
-        For the time being, you will need to contact me through my email above.<br>
-        A feature to delete your own account yourself is currently still being worked on.<br>
-        Otherwise, if you don't mind a record of your username being left here, it should be easy to bulk delete all your uploads from the dashboard anyway.
-      </div>
-    </article>
-#}
-    <h2 class='subtitle'>Where is the server located at?</h2>
-    <article class="message">
-      <div class="message-body">
-        New Jersey, U.S.<br>
-      </div>
-    </article>
-{#
-    <h2 class='subtitle'>Since my uploads are cached, what about after I delete them from the dashboard?</h2>
-    <article class="message">
-      <div class="message-body">
-        We will send API requests to Cloudflare to purge their cache immediately after you delete your uploads from the dashboard.<br>
-        Cache of their thumbnails will also be purged, if applicable.
-      </div>
-    </article>
-
-    <h2 class='subtitle'>Do you have a No-JS uploader form?</h2>
-    <article class="message">
-      <div class="message-body">
-        Yes, check out <a href="nojs" target="_blank" rel="noopener">this page</a>.
-      </div>
-    </article>
-
-    {% if noJsMaxSizeInt and chunkSizeInt -%}
-    <h2 class='subtitle'>Why is the maximum file size in the No-JS uploader form smaller?</h2>
-    <article class="message">
-      <div class="message-body">
-        This site is using Cloudflare, which limits the maximum upload size.<br>
-        Since the homepage uploader chunks your uploads through JS magic, it is possible to increase the maximum file size there.
+        {{ globals.support | safe }}
       </div>
     </article>
     {%- endif %}
+  </div>
+</section>
 
-    {% if chunkSizeInt -%}
-    <h2 class='subtitle'>So your API supports chunked uploads?</h2>
-    <article class="message">
-      <div class="message-body">
-        Yes, the homepage uploader was coded to chunk uploads into {{ chunkSizeInt }} MB pieces by default (configurable through the homepage's Config tab).<br>
-        If you want to chunk your API uploads, feel free to chunks the <a href="https://github.com/BobbyWibowo/lolisafe" target="_blank" rel="noopener">source code</a> to see how it works.<br>
-        <br>
-        A rough description of how it works is to simply upload the chunks with their UUID information attached, and then call the "finish chunks" API with the said UUID, to rebuild them into a single proper file.
-      </div>
-    </article>
-    {%- endif %}
+<section class="section">
+  <div class="container has-text-left">
+    <h2 id="technical" class='title is-spaced'>Technical</h2>
 
-    <h2 class='subtitle'>What are the allowed extensions here?</h2>
+    <h3 class="subtitle has-text-white-ter">What are the allowed extensions here?</h3>
     <article class="message">
       <div class="message-body">
         {% if extensionsFilter.length -%}
@@ -144,7 +132,179 @@
         {%- endif %}
       </div>
     </article>
+
+    <h3 class="subtitle has-text-white-ter">Why are my <strong>.htm/.html</strong> uploads being served as plain text?</h3>
+    <article class="message">
+      <div class="message-body">
+        There had been too many phishing pages being uploaded in the past.
+      </div>
+    </article>
+
+    {% if globals.server_location -%}
+    <h3 class="subtitle has-text-white-ter">Where is the server located?</h3>
+    <article class="message">
+      <div class="message-body">
+        {{ globals.server_location | safe }}.
+        {% if config.cloudflare.purgeCache -%}
+        <br>
+        We are using <a href="https://www.cloudflare.com/cdn/" target="_blank" rel="noopener">Cloudflare</a> though, so you can expect your uploads to be delivered quickly all over the world after they have been cached.
+        {%- endif %}
+      </div>
+    </article>
+    {%- endif %}
+
+    {% if config.cloudflare.purgeCache -%}
+    <h3 class="subtitle has-text-white-ter">Since my uploads are cached, what about after I delete them from the dashboard?</h3>
+    <article class="message">
+      <div class="message-body">
+        We will send API requests to Cloudflare to purge their cache immediately after you delete your uploads from the dashboard.<br>
+        Cache of their thumbnails will also be purged, if applicable.
+      </div>
+    </article>
+    {%- endif %}
+
+    {% if globals.enable_faq_tor -%}
+    <h3 class="subtitle has-text-white-ter">I cannot access this website with Tor and/or VPNs!?</h3>
+    <article class="message">
+      <div class="message-body">
+        My server is actively refreshing and blacklisting Tor exit nodes.<br>
+        There have been too many child pornography uploaders using Tor, that they simply didn't care about individual IPs being banned.<br>
+        Sometimes I might also end up blacklisting IP ranges that were known to come from VPNs, if there had been attempts with multiple of those IPs.<br>
+        Nothing much I can do about it. We live in a society.
+      </div>
+    </article>
+    {%- endif %}
+
+    <h3 class="subtitle has-text-white-ter">Are there any Desktop clients?</h3>
+    <article class="message">
+      <div class="message-body">
+        We do have some browser extensions:<br>
+        <a href="https://addons.mozilla.org/en-US/firefox/addon/lolisafe/" target="_blank" rel="noopener">Firefox extension</a>. Maintained by me. Its GitHub repository is located <a href="https://github.com/BobbyWibowo/loli-safe-extension" target="_blank" rel="noopener">here</a>.<br>
+        <a href="https://chrome.google.com/webstore/detail/loli-safe-uploader/enkkmplljfjppcdaancckgilmgoiofnj" target="_blank" rel="noopener">Chrome extension</a>. Maintained by lolisafe's team. Its GitHub repository is located <a href="https://github.com/WeebDev/loli-safe-extension" target="_blank" rel="noopener">here</a>.<br>
+        With the Chrome extension specifically, you will have to manually set the domain in the extension's settings to <code>https://safe.fiery.me</code>.<br>
+        <br>
+        If you use Windows desktop, the safe support uploads from <a href="https://github.com/ShareX/ShareX" target="_blank" rel="noopener">ShareX</a>.<br>
+        You can download the config file by clicking on the ShareX icon on the homepage.<br>
+        When logged in, the config file will also be automatically populated with your account's token.<br>
+        This will allow you to manage your ShareX uploads from our Dashboard.<br>
+        <br>
+        If you use Linux desktop, there is a compatible bash uploader which I also maintain.<br>
+        You can learn more about it from <a href="https://github.com/BobbyWibowo/uguush" target="_blank" rel="noopener">its GitHub repository</a>.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Do you have a No-JS uploader form?</h3>
+    <article class="message">
+      <div class="message-body">
+        <a href="nojs" target="_blank"><strong>Yes!</strong></a>
+      </div>
+    </article>
+
+    {% if noJsMaxSizeInt and chunkSizeInt -%}
+    <h3 class="subtitle has-text-white-ter">Why is the maximum file size in the No-JS uploader form smaller?</h3>
+    <article class="message">
+      <div class="message-body">
+        This site is using Cloudflare, which limits the maximum upload size.<br>
+        Since the homepage uploader chunks your uploads through JS wizardry, it is possible to increase the maximum file size there.
+      </div>
+    </article>
+    {%- endif %}
+
+    {% if chunkSizeInt -%}
+    <h3 class="subtitle has-text-white-ter">So your API supports chunked uploads?</h3>
+    <article class="message">
+      <div class="message-body">
+        <strong>Yes.</strong> The homepage uploader was coded to chunk uploads into {{ chunkSizeInt }} MB pieces by default. However, this is configurable through its Config tab.<br>
+        <br>
+        If you want to chunk your API uploads, feel free to inspect the source code to see how it works.<br>
+        A rough description of how it works is to simply upload the chunks with their UUID information attached,<br>
+        and then call the "finish chunks" API with the said UUID, to rebuild them into a single proper file.
+      </div>
+    </article>
+    {%- endif %}
+
+    {% if globals.fork_repo -%}
+    <h3 class="subtitle has-text-white-ter">I found a bug! -or- I want to request a feature!</h3>
+    <article class="message">
+      <div class="message-body">
+        Feel free to create a {{ globals.fork_host }} issue <a href="{{ globals.fork_issues }}" target="_blank" rel="noopener">here</a>.</br>
+        If you do not have a {{ globals.fork_host }} account, you can also email <a href="mailto:{{ globals.email }}">{{ globals.email }}</a>.
+      </div>
+    </article>
+    {%- endif %}
+
+    <h3 class="subtitle has-text-white-ter">How do I delete my own account <strong>and</strong> all the uploads associated with it?</h3>
+    <article class="message">
+      <div class="message-body">
+        For now, you will also have to contact me through my email above.<br>
+        A feature to delete your own account by yourself is still <strong>work in progress</strong>.<br>
+        Otherwise, if you do not mind a record of your username being left here, it should be easy to bulk delete all your uploads from the Dashboard anyway.
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="section has-extra-bottom-padding">
+  <div class="container has-text-left">
+    <h2 id="privacy" class='title is-spaced'>Privacy</h2>
+
+    <h3 class="subtitle has-text-white-ter">What information is kept with uploads?</h3>
+    <article class="message">
+      <div class="message-body">
+        The uploader's <strong>IP address</strong>.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">What information is kept with users?</h3>
+    <article class="message">
+      <div class="message-body">
+        Technically, <strong>none</strong>.<br>
+        After all, not even an email address is required to register an account.<br>
+        Anything will do as your usernames, and passwords are also encrypted.<br>
+        If a registered user has not uploaded anything even once, then I will not even be able to associate it to any specific IP address.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Why do you need to keep my IP address?</h3>
+    <article class="message">
+      <div class="message-body">
+        <strong>Security purposes.</strong><br>
+        For instance, if it is necessary to purge uploads from a specific IP address due to abuse, it <i>will</i> help a lot to be able to find all uploads by that specific uploader.<br>
+        My safe have been plagued by aplenty of abuse, so this policy will remain as long as the safe lives on.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Does the server have some sort of access logs?</h3>
+    <article class="message">
+      <div class="message-body">
+        <strong>Yes.</strong><br>
+        The logs contain each visitor's IP address.<br>
+        This is required by our automated system, that checks logs in real time to detect and punish abuse, such as DDoS attempts, scanners, and so on.<br>
+        Logs are rotated daily, and the server will only keep the last 10 logs.<br>
+        So you can be assured that the logs will only be kept for <strong>10 days at most</strong>.
+      </div>
+    </article>
+
+    {% if config.cookiePolicy -%}
+    <h3 class="subtitle has-text-white-ter">Cookies</h3>
+    <article class="message">
+      <div class="message-body">
+        We use cookies to offer you a better browsing experience and to analyze our traffic.<br>
+        You consent to our cookies if you continue to use this website.<br>
+        Details in our <a href="cookiepolicy">Cookie Policy</a>.
+      </div>
+    </article>
+    {%- endif %}
+
+    <h3 class="subtitle has-text-white-ter">I still have more unanswered questions!</h3>
+    <article class="message">
+      <div class="message-body">
+        Feel free to email <a href="mailto:{{ globals.email }}">{{ globals.email }}</a>.
+      </div>
+    </article>
 #}
   </div>
 </section>
+
+{% include "_partial/floating-home.njk" %}
 {% endblock %}

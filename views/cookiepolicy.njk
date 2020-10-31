@@ -1,0 +1,237 @@
+{% set metaTitle = "Cookie Policy" %}
+{% set metaUrl = '/cookiepolicy' %}
+
+{% extends "_layout.njk" %}
+
+{% block stylesheets %}
+<!-- Libs stylesheets -->
+<link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+{{ super() }}
+{% endblock %}
+
+{% block content %}
+{{ super() }}
+<section class="section has-extra-bottom-padding">
+  <div class="container has-text-left">
+    <h1 class='title'>Cookie Policy</h1>
+    <p class="subtitle">
+      {{ globals.whole_cookie }} may use cookies. This page describe how and why we use cookies.
+    </p>
+    <hr>
+
+    <h3 class="subtitle has-text-white-ter">What are cookies? -or- How to disable cookies?</h3>
+    <article class="message">
+      <div class="message-body">
+        <strong>Simply put, a cookie is a technology for remembering something about you.</strong><br>
+        If you want to learn more about cookies, as well as how to control and disable them, check out <a href="https://www.cookiesandyou.com/" target="_blank" rel="noopener">Cookies & You</a> website.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">How We Use Cookies</h3>
+    <article class="message">
+      <div class="message-body">
+        We use cookies for a variety of reasons detailed below.<br>
+        Unfortunately in most cases there are no industry standard options for disabling cookies without completely disabling the functionality and features they add to this site.<br>
+        It is recommended that you leave on all cookies if you are not sure whether you need them or not in case they are used to provide a service that you use.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Account related cookies</h3>
+    <article class="message">
+      <div class="message-body">
+        If you create an account with us, then we will use cookies for the management of the signup process and general administration.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Login related cookies</h3>
+    <article class="message">
+      <div class="message-body">
+        We use cookies when you are logged in so that we can remember that you are logged in.<br>
+        This prevents you from having to log in every single time you visit a new page.<br>
+        These cookies are typically removed or cleared when you log out to ensure that you can only access restricted features and areas when logged in.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">What information do we know about you?</h3>
+    <article class="message">
+      <div class="message-body">
+        We don’t request or require you to provide personal information to access our website.<br>
+        However, we may receive your IP address and user agent automatically.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">What about cookies?</h3>
+    <article class="message">
+      <div class="message-body">
+        {{ globals.whole_cookie }} may place cookies on your browser in order to identify you when you return to our website.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Cookies We May Use</h3>
+    <article class="message">
+      <div class="message-body">
+        We may use the following cookies:<br>
+        <br>
+        <div class="table-container">
+          <table class="table is-fullwidth is-hoverable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Source</th>
+                <th>Purpose</th>
+                <th>Storage Days</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>chunkSize</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>cid</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Analytics</td>
+                <td>730</td>
+              </tr>
+              <tr>
+                <th>cookieconsent_status</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Necessary</td>
+                <td>730</td>
+              </tr>
+              <tr>
+                <th>fileLength</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>newsfeed</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Necessary</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>originalNames</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>originalNamesAll</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>parallelUploads</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>previewImages</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>render</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>selectedAlbums</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>selectedAlbumsAll</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>selectedUploads</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>selectedUploadsAll</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>selectedUsers</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>siBytes</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>stripTags</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>token</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Necessary</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>uploadAge</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>uploadsHistoryOrder</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>viewTypeUploads</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+              <tr>
+                <th>viewTypeUploadsAll</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
+                <td>LocalStorage</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        Only Analytics keys will be set on first page load regardless of your consent.<br>
+        The rest will only be set as you use features of our website.<br>
+        However, all Personalization keys should delete themselves once you set back their default values.
+      </div>
+    </article>
+
+    <h3 class="subtitle has-text-white-ter">Questions?</h3>
+    <article class="message">
+      <div class="message-body">
+        For more information, email <a href="mailto:{{ globals.email }}">{{ globals.email }}</a>.
+      </div>
+    </article>
+  </div>
+</section>
+
+{% include "_partial/floating-home.njk" %}
+{% endblock %}

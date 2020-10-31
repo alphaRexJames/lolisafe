@@ -15,7 +15,8 @@ const map = {
   },
   users: {
     enabled: 'integer',
-    permission: 'integer'
+    permission: 'integer',
+    registration: 'integer'
   }
 }
 

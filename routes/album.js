@@ -8,10 +8,7 @@ const db = require('knex')(config.database)
 routes.get('/a/:identifier', async (req, res, next) => {
   const identifier = req.params.identifier
   if (identifier === undefined)
-    return res.status(401).json({
-      success: false,
-      description: 'No identifier provided.'
-    })
+    res.status(404).sendFile(path.join(paths.errorRoot, config.errorPages[404]))
 
   const album = await db.table('albums')
     .where({
@@ -21,45 +18,39 @@ routes.get('/a/:identifier', async (req, res, next) => {
     .select('id', 'name', 'identifier', 'editedAt', 'download', 'public', 'description')
     .first()
 
-  if (!album)
+  if (!album || album.public === 0)
     return res.status(404).sendFile(path.join(paths.errorRoot, config.errorPages[404]))
-  else if (album.public === 0)
-    return res.status(403).json({
-      success: false,
-      description: 'This album is not available for public.'
-    })
 
   const nojs = req.query.nojs !== undefined
 
-  // Cache ID - we initialize a separate cache for No-JS version
-  const cacheid = nojs ? `${album.id}-nojs` : album.id
+  let cacheid
+  if (process.env.NODE_ENV !== 'development') {
+    // Cache ID - we initialize a separate cache for No-JS version
+    cacheid = nojs ? `${album.id}-nojs` : album.id
 
-  if (!utils.albumsCache[cacheid])
-    utils.albumsCache[cacheid] = {
-      cache: null,
-      generating: false,
-      // Cache will actually be deleted after the album has been updated,
-      // so storing this timestamp may be redundant, but just in case.
-      generatedAt: 0
-    }
+    if (!utils.albumsCache[cacheid])
+      utils.albumsCache[cacheid] = {
+        cache: null,
+        generating: false
+      }
 
-  if (!utils.albumsCache[cacheid].cache && utils.albumsCache[cacheid].generating)
-    return res.json({
-      success: false,
-      description: 'This album is still generating its public page.'
-    })
-  else if ((album.editedAt < utils.albumsCache[cacheid].generatedAt) || utils.albumsCache[cacheid].generating)
-    return res.send(utils.albumsCache[cacheid].cache)
+    if (!utils.albumsCache[cacheid].cache && utils.albumsCache[cacheid].generating)
+      return res.render('album-notice', {
+        config,
+        versions: utils.versionStrings,
+        album,
+        notice: 'This album\'s public page is still being generated. Please try again later.'
+      })
+    else if (utils.albumsCache[cacheid].cache)
+      return res.send(utils.albumsCache[cacheid].cache)
 
-  // Use current timestamp to make sure cache is invalidated
-  // when an album is edited during this generation process.
-  utils.albumsCache[cacheid].generating = true
-  utils.albumsCache[cacheid].generatedAt = Math.floor(Date.now() / 1000)
+    utils.albumsCache[cacheid].generating = true
+  }
 
   const files = await db.table('files')
     .select('name', 'size')
     .where('albumid', album.id)
-    .orderBy('id', 'DESC')
+    .orderBy('id', 'desc')
 
   album.thumb = ''
   album.totalSize = 0
@@ -89,12 +80,15 @@ routes.get('/a/:identifier', async (req, res, next) => {
     files,
     nojs
   }, (error, html) => {
-    utils.albumsCache[cacheid].cache = error ? null : html
-    utils.albumsCache[cacheid].generating = false
+    const data = error ? null : html
+    if (cacheid) {
+      utils.albumsCache[cacheid].cache = data
+      utils.albumsCache[cacheid].generating = false
+    }
 
     // Express should already send error to the next handler
     if (error) return
-    return res.send(utils.albumsCache[cacheid].cache)
+    return res.send(data)
   })
 })
 

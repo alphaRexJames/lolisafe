@@ -4,8 +4,9 @@
 {% extends "_layout.njk" %}
 
 {% block stylesheets %}
-{{ super() }}
+<!-- Libs stylesheets -->
 <link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+{{ super() }}
 <link rel="stylesheet" href="css/sweetalert.css{{ versions[1] }}">
 <link rel="stylesheet" href="css/thumbs.css{{ versions[1] }}">
 <link rel="stylesheet" href="css/dashboard.css{{ versions[1] }}">
@@ -19,8 +20,13 @@
 <script src="libs/lazyload/lazyload.min.js{{ versions[3] }}"></script>
 {# Polyfill smooth scroll for older browsers #}
 <script src="libs/smoothscroll/smoothscroll.min.js{{ versions[3] }}"></script>
-<script src="js/dashboard.js{{ versions[1] }}"></script>
+{# We assign an ID for this so that the script can find out its own version #}
+<script id="mainScript" src="js/dashboard.js{{ versions[1] }}"></script>
 <script src="js/misc/utils.js{{ versions[1] }}"></script>
+{% endblock %}
+
+{% block endmeta %}
+{% include "_partial/noscript-refresh.njk" %}
 {% endblock %}
 
 {% block content %}
@@ -30,9 +36,9 @@
     <h1 class="title">
       Dashboard
     </h1>
-    <h1 class="subtitle">
+    <p class="subtitle">
       A simple <strong>dashboard</strong>, to sort your uploaded stuff
-    </h1>
+    </p>
     <hr>
 
     <div class="columns">
@@ -53,7 +59,7 @@
           <p class="menu-label">Albums</p>
           <ul class="menu-list is-unselectable">
             <li>
-              <a id="itemManageAlbums" class="is-relative">Manage your albums</a>
+              <a id="itemManageYourAlbums" class="is-relative">Manage your albums</a>
             </li>
             <li>
               <ul id="albumsContainer"></ul>
@@ -66,6 +72,9 @@
             </li>
             <li>
               <a id="itemManageUploads" class="is-relative is-hidden">Manage uploads</a>
+            </li>
+            <li>
+              <a id="itemManageAlbums" class="is-relative is-hidden">Manage albums</a>
             </li>
             <li>
               <a id="itemManageUsers" class="is-relative is-hidden">Manage users</a>

@@ -34,31 +34,30 @@ self.verify = async (req, res, next) => {
   const username = typeof req.body.username === 'string'
     ? req.body.username.trim()
     : ''
-  if (!username)
-    return res.json({ success: false, description: 'No username provided.' })
+  if (!username) return res.json({ success: false, description: 'No username provided.' })
 
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
-  if (!password)
-    return res.json({ success: false, description: 'No password provided.' })
+  if (!password) return res.json({ success: false, description: 'No password provided.' })
 
   try {
     const user = await db.table('users')
       .where('username', username)
       .first()
 
-    if (!user)
-      return res.json({ success: false, description: 'Username does not exist.' })
+    if (!user) return res.json({ success: false, description: 'Username does not exist.' })
 
-    if (user.enabled === false || user.enabled === 0)
+    if (user.enabled === false || user.enabled === 0) {
       return res.json({ success: false, description: 'This account has been disabled.' })
+    }
 
     const result = await bcrypt.compare(password, user.password)
-    if (result === false)
+    if (result === false) {
       return res.json({ success: false, description: 'Wrong password.' })
-    else
+    } else {
       return res.json({ success: true, token: user.token })
+    }
   } catch (error) {
     logger.error(error)
     return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
@@ -66,34 +65,46 @@ self.verify = async (req, res, next) => {
 }
 
 self.register = async (req, res, next) => {
-  if (config.enableUserAccounts === false)
+  if (config.enableUserAccounts === false) {
     return res.json({ success: false, description: 'Registration is currently disabled.' })
+  }
 
   const username = typeof req.body.username === 'string'
     ? req.body.username.trim()
     : ''
-  if (username.length < self.user.min || username.length > self.user.max)
-    return res.json({ success: false, description: `Username must have ${self.user.min}-${self.user.max} characters.` })
+  if (username.length < self.user.min || username.length > self.user.max) {
+    return res.json({
+      success: false,
+      description: `Username must have ${self.user.min}-${self.user.max} characters.`
+    })
+  }
 
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
-  if (password.length < self.pass.min || password.length > self.pass.max)
-    return res.json({ success: false, description: `Password must have ${self.pass.min}-${self.pass.max} characters.` })
+  if (password.length < self.pass.min || password.length > self.pass.max) {
+    return res.json({
+      success: false,
+      description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
+    })
+  }
 
   try {
     const user = await db.table('users')
       .where('username', username)
       .first()
 
-    if (user)
-      return res.json({ success: false, description: 'Username already exists.' })
+    if (user) return res.json({ success: false, description: 'Username already exists.' })
 
     const hash = await bcrypt.hash(password, saltRounds)
 
     const token = await tokens.generateUniqueToken()
-    if (!token)
-      return res.json({ success: false, description: 'Sorry, we could not allocate a unique token. Try again?' })
+    if (!token) {
+      return res.json({
+        success: false,
+        description: 'Sorry, we could not allocate a unique token. Try again?'
+      })
+    }
 
     await db.table('users')
       .insert({
@@ -101,7 +112,8 @@ self.register = async (req, res, next) => {
         password: hash,
         token,
         enabled: 1,
-        permission: perms.permissions.user
+        permission: perms.permissions.user,
+        registration: Math.floor(Date.now() / 1000)
       })
     utils.invalidateStatsCache('users')
     tokens.onHold.delete(token)
@@ -120,8 +132,12 @@ self.changePassword = async (req, res, next) => {
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
-  if (password.length < self.pass.min || password.length > self.pass.max)
-    return res.json({ success: false, description: `Password must have ${self.pass.min}-${self.pass.max} characters.` })
+  if (password.length < self.pass.min || password.length > self.pass.max) {
+    return res.json({
+      success: false,
+      description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
+    })
+  }
 
   try {
     const hash = await bcrypt.hash(password, saltRounds)
@@ -138,12 +154,90 @@ self.changePassword = async (req, res, next) => {
 }
 
 self.assertPermission = (user, target) => {
-  if (!target)
+  if (!target) {
     throw new Error('Could not get user with the specified ID.')
-  else if (!perms.higher(user, target))
+  } else if (!perms.higher(user, target)) {
     throw new Error('The user is in the same or higher group as you.')
-  else if (target.username === 'root')
+  } else if (target.username === 'root') {
     throw new Error('Root user may not be tampered with.')
+  }
+}
+
+self.createUser = async (req, res, next) => {
+  const user = await utils.authorize(req, res)
+  if (!user) return
+
+  const isadmin = perms.is(user, 'admin')
+  if (!isadmin) return res.status(403).end()
+
+  const username = typeof req.body.username === 'string'
+    ? req.body.username.trim()
+    : ''
+  if (username.length < self.user.min || username.length > self.user.max) {
+    return res.json({
+      success: false,
+      description: `Username must have ${self.user.min}-${self.user.max} characters.`
+    })
+  }
+
+  let password = typeof req.body.password === 'string'
+    ? req.body.password.trim()
+    : ''
+  if (password.length) {
+    if (password.length < self.pass.min || password.length > self.pass.max) {
+      return res.json({
+        success: false,
+        description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
+      })
+    }
+  } else {
+    password = randomstring.generate(self.pass.rand)
+  }
+
+  let group = req.body.group
+  let permission
+  if (group !== undefined) {
+    permission = perms.permissions[group]
+    if (typeof permission !== 'number' || permission < 0) {
+      group = 'user'
+      permission = perms.permissions.user
+    }
+  }
+
+  try {
+    const user = await db.table('users')
+      .where('username', username)
+      .first()
+
+    if (user) return res.json({ success: false, description: 'Username already exists.' })
+
+    const hash = await bcrypt.hash(password, saltRounds)
+
+    const token = await tokens.generateUniqueToken()
+    if (!token) {
+      return res.json({
+        success: false,
+        description: 'Sorry, we could not allocate a unique token. Try again?'
+      })
+    }
+
+    await db.table('users')
+      .insert({
+        username,
+        password: hash,
+        token,
+        enabled: 1,
+        permission,
+        registration: Math.floor(Date.now() / 1000)
+      })
+    utils.invalidateStatsCache('users')
+    tokens.onHold.delete(token)
+
+    return res.json({ success: true, username, password, group })
+  } catch (error) {
+    logger.error(error)
+    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+  }
 }
 
 self.editUser = async (req, res, next) => {
@@ -151,12 +245,10 @@ self.editUser = async (req, res, next) => {
   if (!user) return
 
   const isadmin = perms.is(user, 'admin')
-  if (!isadmin)
-    return res.status(403).end()
+  if (!isadmin) return res.status(403).end()
 
   const id = parseInt(req.body.id)
-  if (isNaN(id))
-    return res.json({ success: false, description: 'No user specified.' })
+  if (isNaN(id)) return res.json({ success: false, description: 'No user specified.' })
 
   try {
     const target = await db.table('users')
@@ -168,17 +260,20 @@ self.editUser = async (req, res, next) => {
 
     if (req.body.username !== undefined) {
       update.username = String(req.body.username).trim()
-      if (update.username.length < self.user.min || update.username.length > self.user.max)
+      if (update.username.length < self.user.min || update.username.length > self.user.max) {
         throw new Error(`Username must have ${self.user.min}-${self.user.max} characters.`)
+      }
     }
 
-    if (req.body.enabled !== undefined)
+    if (req.body.enabled !== undefined) {
       update.enabled = Boolean(req.body.enabled)
+    }
 
     if (req.body.group !== undefined) {
       update.permission = perms.permissions[req.body.group]
-      if (typeof update.permission !== 'number' || update.permission < 0)
+      if (typeof update.permission !== 'number' || update.permission < 0) {
         update.permission = target.permission
+      }
     }
 
     let password
@@ -193,7 +288,7 @@ self.editUser = async (req, res, next) => {
     utils.invalidateStatsCache('users')
 
     const response = { success: true, update }
-    if (password) response.password = password
+    if (password) response.update.password = password
     return res.json(response)
   } catch (error) {
     logger.error(error)
@@ -214,13 +309,11 @@ self.deleteUser = async (req, res, next) => {
   if (!user) return
 
   const isadmin = perms.is(user, 'admin')
-  if (!isadmin)
-    return res.status(403).end()
+  if (!isadmin) return res.status(403).end()
 
   const id = parseInt(req.body.id)
   const purge = req.body.purge
-  if (isNaN(id))
-    return res.json({ success: false, description: 'No user specified.' })
+  if (isNaN(id)) return res.json({ success: false, description: 'No user specified.' })
 
   try {
     const target = await db.table('users')
@@ -236,8 +329,7 @@ self.deleteUser = async (req, res, next) => {
       const fileids = files.map(file => file.id)
       if (purge) {
         const failed = await utils.bulkDeleteFromDb('id', fileids, user)
-        if (failed.length)
-          return res.json({ success: false, failed })
+        if (failed.length) return res.json({ success: false, failed })
         utils.invalidateStatsCache('uploads')
       } else {
         // Clear out userid attribute from the files
@@ -247,7 +339,8 @@ self.deleteUser = async (req, res, next) => {
       }
     }
 
-    // TODO: Figure out obstacles of just deleting the albums
+    // TODO: Figure out why can't we just just delete the albums from DB
+    // DISCLAIMER: Upstream always had it coded this way for some reason
     const albums = await db.table('albums')
       .where('userid', id)
       .where('enabled', 1)
@@ -265,8 +358,7 @@ self.deleteUser = async (req, res, next) => {
         try {
           await paths.unlink(path.join(paths.zips, `${album.identifier}.zip`))
         } catch (error) {
-          if (error.code !== 'ENOENT')
-            throw error
+          if (error.code !== 'ENOENT') throw error
         }
       }))
     }
@@ -294,23 +386,22 @@ self.listUsers = async (req, res, next) => {
   if (!user) return
 
   const isadmin = perms.is(user, 'admin')
-  if (!isadmin)
-    return res.status(403).end()
+  if (!isadmin) return res.status(403).end()
 
   try {
     const count = await db.table('users')
       .count('id as count')
       .then(rows => rows[0].count)
-    if (!count)
-      return res.json({ success: true, users: [], count })
+    if (!count) return res.json({ success: true, users: [], count })
 
-    let offset = req.params.page
-    if (offset === undefined) offset = 0
+    let offset = Number(req.params.page)
+    if (isNaN(offset)) offset = 0
+    else if (offset < 0) offset = Math.max(0, Math.ceil(count / 25) + offset)
 
     const users = await db.table('users')
       .limit(25)
       .offset(25 * offset)
-      .select('id', 'username', 'enabled', 'permission')
+      .select('id', 'username', 'enabled', 'timestamp', 'permission', 'registration')
 
     const pointers = {}
     for (const user of users) {

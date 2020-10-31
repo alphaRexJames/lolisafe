@@ -1,0 +1,180 @@
+@charset "utf-8";
+
+@import "_variables";
+
+/** Animations **/
+
+@-webkit-keyframes pulseWarning {
+  0% {
+    border-color: $warning
+  }
+
+  to {
+    border-color: $warning-dark
+  }
+}
+
+@keyframes pulseWarning {
+  0% {
+    border-color: $warning
+  }
+
+  to {
+    border-color: $warning-dark
+  }
+}
+
+@-webkit-keyframes pulseWarningBody {
+  0% {
+    background-color: $warning
+  }
+
+  to {
+    background-color: $warning-dark
+  }
+}
+
+@keyframes pulseWarningBody {
+  0% {
+    background-color: $warning
+  }
+
+  to {
+    background-color: $warning-dark
+  }
+}
+
+/** Main **/
+
+$swal-modal-background: $grey-darker;
+
+.swal-modal {
+  background-color: $swal-modal-background;
+
+  &.is-expanded {
+    width: auto;
+    max-width: 90%
+  }
+
+  .field {
+    text-align: initial
+  }
+}
+
+.swal-title,
+.swal-text {
+  color: $white-ter
+}
+
+.swal-text {
+  text-align: center
+}
+
+.swal-content {
+  .label {
+    color: $white-ter
+  }
+
+  .checkbox,
+  .radio {
+    color: $white-ter;
+
+    &:hover {
+      color: $grey-lightest
+    }
+  }
+}
+
+.swal-button--confirm:not(.swal-button--danger) {
+  background-color: $info;
+
+  &:hover {
+    background-color: $info-dark
+  }
+
+  &:focus {
+    box-shadow: 0 0 0 1px $black-bis, 0 0 0 3px $info-dark
+  }
+}
+
+.swal-button--danger {
+  background-color: $danger;
+
+  &:hover {
+    background-color: $danger-dark
+  }
+
+  &:focus {
+    box-shadow: 0 0 0 1px $black-bis, 0 0 0 3px $danger-dark
+  }
+}
+
+.swal-button--cancel {
+  background-color: $primary;
+  color: $white;
+
+  &:hover {
+    background-color: $primary-dark
+  }
+
+  &:focus {
+    box-shadow: 0 0 0 1px $black-bis, 0 0 0 3px $primary-dark
+  }
+}
+
+.swal-button--loading {
+  color: transparent
+}
+
+.swal-icon--info {
+  border-color: $info;
+
+  &::after,
+  &::before {
+    background-color: $info
+  }
+}
+
+.swal-icon--error {
+  border-color: $danger
+}
+
+.swal-icon--error__line {
+  background-color: $danger
+}
+
+.swal-icon--warning {
+  border-color: $warning;
+  animation: pulseWarning 0.5s infinite alternate
+}
+
+.swal-icon--warning__body,
+.swal-icon--warning__dot {
+  background-color: $warning;
+  animation: pulseWarningBody 0.5s infinite alternate
+}
+
+.swal-icon--success {
+  border-color: $success;
+
+  &::after,
+  &::before {
+    background-color: $swal-modal-background
+  }
+}
+
+.swal-icon--success__line {
+  background-color: $success
+}
+
+.swal-icon--success__hide-corners {
+  background-color: $swal-modal-background
+}
+
+.swal-display-thumb-container {
+  min-width: 200px;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center
+}

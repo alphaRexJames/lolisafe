@@ -1,0 +1,58 @@
+@charset "utf-8";
+
+@import "_variables";
+
+/** Main **/
+
+.image-container {
+  flex: none;
+  position: relative;
+  width: 224px;
+  height: 224px;
+  margin: 0.75rem;
+  padding: 11px;
+  overflow: hidden;
+  align-items: center;
+  border: 1px solid $grey;
+
+  .title {
+    font-weight: normal;
+    word-break: break-all
+  }
+
+  .image {
+    display: flex;
+    height: 200px;
+    width: 200px;
+    align-items: center;
+    justify-content: center;
+
+    img {
+      max-height: 100%;
+      max-width: 100%;
+      height: auto;
+      width: auto
+    }
+  }
+
+  .details {
+    position: absolute;
+    left: 11px;
+    bottom: 11px;
+    right: 11px;
+    background-color: #0000008f;
+    color: #eff0f1;
+    padding: 3px;
+    font-size: 0.75rem;
+
+    p {
+      display: block;
+      text-overflow: ellipsis;
+      overflow: hidden;
+
+      &.name {
+        font-weight: bold
+      }
+    }
+  }
+}

@@ -14,8 +14,7 @@ const self = {
 self.generateUniqueToken = async () => {
   for (let i = 0; i < self.tokenMaxTries; i++) {
     const token = randomstring.generate(self.tokenLength)
-    if (self.onHold.has(token))
-      continue
+    if (self.onHold.has(token)) continue
 
     // Put token on-hold (wait for it to be inserted to DB)
     self.onHold.add(token)
@@ -40,8 +39,7 @@ self.verify = async (req, res, next) => {
     ? req.body.token.trim()
     : ''
 
-  if (!token)
-    return res.json({ success: false, description: 'No token provided.' })
+  if (!token) return res.json({ success: false, description: 'No token provided.' })
 
   try {
     const user = await db.table('users')
@@ -49,14 +47,15 @@ self.verify = async (req, res, next) => {
       .select('username', 'permission')
       .first()
 
-    if (!user)
-      return res.json({ success: false, description: 'Invalid token.' })
+    if (!user) return res.json({ success: false, description: 'Invalid token.' })
 
-    return res.json({
+    const obj = {
       success: true,
       username: user.username,
       permissions: perms.mapPermissions(user)
-    })
+    }
+    if (utils.clientVersion) obj.version = utils.clientVersion
+    return res.json(obj)
   } catch (error) {
     logger.error(error)
     return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
@@ -74,8 +73,12 @@ self.change = async (req, res, next) => {
   if (!user) return
 
   const newToken = await self.generateUniqueToken()
-  if (!newToken)
-    return res.json({ success: false, description: 'Sorry, we could not allocate a unique token. Try again?' })
+  if (!newToken) {
+    return res.json({
+      success: false,
+      description: 'Sorry, we could not allocate a unique token. Try again?'
+    })
+  }
 
   try {
     await db.table('users')

@@ -91,6 +91,7 @@
 .icon-gatsby::before { content: '\e81c' } /* '' */
 .icon-filter::before { content: '\f0b0' } /* '' */
 .icon-docs::before { content: '\f0c5' } /* '' */
+.icon-exchange:before { content: '\f0ec'; } /* '' */
 .icon-doc-inv::before { content: '\f15b' } /* '' */
 .icon-paper-plane::before { content: '\f1d8' } /* '' */
 .icon-chrome::before { content: '\f268' } /* '' */

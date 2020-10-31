@@ -1,17 +1,17 @@
-{#
-  I thought of making a redirect with http-equiv="refresh", but it's too quick that people
-  barely have any time to read the message which explains why the redirect is necessary.
-  So yeah, I decided to stick with making people click on the link which leads to
-  the No-JS uploader, if they really want to use the service.
-#}
-
 <noscript>
-  <style>body > section:not(#noscript) { display: none !important; }</style>
   <section id="noscript" class="hero is-fullheight">
     <div class="hero-body">
-      <div class="container has-text-centered">
-        <p>You have JavaScript disabled, but this page requires JavaScript to function.</p>
-        <p>Please <a href="nojs">click here</a> if you want to try out our No-JS uploader.</p>
+      <div class="container has-text-centered is-size-5">
+        <p>
+          This page requires JavaScript to function.
+        </p>
+        <p>
+          {%- if noscriptMessage -%}
+          {{ noscriptMessage | safe }}
+          {%- else -%}
+          If you are not automatically redirected to our No-JS uploader, <a href="nojs">click here</a>.
+          {%- endif -%}
+        </p>
       </div>
     </div>
   </section>

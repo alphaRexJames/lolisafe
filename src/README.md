@@ -14,7 +14,7 @@ Usage:
 node scripts/bump-versions.js <types>
 
 types:
-Space separated list of types (accepts 1 to 4).
+Space separated list of types (accepts 1 to 5).
 1: CSS and JS files (lolisafe core assets + fontello.css).
 2: Icons, images and config files (manifest.json, browserconfig.xml, etc).
 3: CSS and JS files (libs from /public/libs, such as bulma, lazyload, etc).

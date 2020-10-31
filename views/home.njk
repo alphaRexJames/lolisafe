@@ -7,10 +7,15 @@
 {% set urlExtensionsFilter = config.uploads.urlExtensionsFilter %}
 {% set urlExtensionsFilterEnabled = urlExtensionsFilterMode and urlExtensionsFilterMode !== 'inherit' and urlExtensionsFilter.length %}
 {% set temporaryUploadAges = config.uploads.temporaryUploadAges %}
+{% set cookiePolicy = config.cookiePolicy %}
 
 {% block stylesheets %}
-{{ super() }}
+<!-- Libs stylesheets -->
 <link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+{% if cookiePolicy -%}
+<link rel="stylesheet" href="libs/cookieconsent/cookieconsent.min.css{{ versions[3] }}">
+{%- endif %}
+{{ super() }}
 <link rel="stylesheet" href="css/sweetalert.css{{ versions[1] }}">
 <link rel="stylesheet" href="css/home.css{{ versions[1] }}">
 {% endblock %}
@@ -22,10 +27,19 @@
 <script src="libs/axios/axios.min.js{{ versions[3] }}"></script>
 <script src="libs/clipboard.js/clipboard.min.js{{ versions[3] }}"></script>
 <script src="libs/lazyload/lazyload.min.js{{ versions[3] }}"></script>
-<script src="js/home.js{{ versions[1] }}"></script>
-<script src="js/misc/utils.js{{ versions[1] }}"></script>
+{% if cookiePolicy -%}
+<script src="libs/cookieconsent/cookieconsent.min.js{{ versions[3] }}"></script>
+{%- endif %}
 {# We assign an ID for this so that the script can find out version string for render images #}
-{#<script id="renderScript" data-version="{{ versions[4] }}" src="js/misc/render.js{{ versions[1] }}"></script>#}
+{#<script id="renderScript" data-version="{{ versions[4] }}" src="js/misc/render.js{{ versions[1] }}" async></script>#}
+{#<script src="js/misc/newsfeed.js{{ versions[1] }}" async></script>#}
+{# We assign an ID for this so that the script can find out its own version #}
+<script id="mainScript" src="js/home.js{{ versions[1] }}"></script>
+<script src="js/misc/utils.js{{ versions[1] }}"></script>
+{% endblock %}
+
+{% block endmeta %}
+{% include "_partial/noscript-refresh.njk" %}
 {% endblock %}
 
 {% block content %}
@@ -34,19 +48,20 @@
   <div class="hero-body">
     <div class="container has-text-centered">
       <p id="b" class="is-relative">
-        <img class="logo" alt="logo" src="images/logo_smol.png{{ versions[2] }}">
+        <img class="logo is-hidden-mobile" alt="logo" src="images/logo_smol.png{{ versions[2] }}">
+        <img class="logo is-2x is-block-mobile" alt="logo" src="images/logo_smol@2x.png{{ versions[2] }}">
       </p>
       <h1 class="title">{{ globals.name }}</h1>
       <h2 class="subtitle">{{ globals.home_subtitle | safe }}</h2>
 
-      <h3 id="maxSize" class="subtitle">
+      <p id="maxSize" class="subtitle">
         Maximum upload size per file is <span>{{ maxSizeInt }} MB</span>
-      </h3>
+      </p>
 
       <div class="columns is-gapless">
         <div class="column is-hidden-mobile"></div>
         <div class="column">
-          <a id="loginToUpload" class="button is-danger is-outlined is-fullwidth is-loading"></a>
+          <a id="loginToUpload" class="button is-danger is-outlined is-fullwidth is-loading is-wrappable"></a>
           <div id="albumDiv" class="field has-addons is-hidden">
             <div class="control is-expanded">
               <div class="select is-fullwidth">
@@ -143,7 +158,7 @@
           <p class="descriptive-progress"></p>
           <p class="error is-hidden"></p>
           <p class="link is-hidden">
-            <a target="_blank" rel="noopener"></a>
+            <a target="_blank"></a>
           </p>
           <p class="help expiry-date is-hidden"></p>
           <p class="clipboard-mobile is-hidden">

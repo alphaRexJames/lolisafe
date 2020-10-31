@@ -1,1 +1,1 @@
-{"version":3,"sources":["css/album.css"],"names":[],"mappings":"AAAA,SACE,eACF,CAEA,oCACE,aACE,iBACF,CACF","file":"album.css","sourcesContent":[".section {\n  background: none\n}\n\n@media screen and (max-width: 768px) {\n  .description {\n    text-align: center\n  }\n}\n"]}
+{"version":3,"sources":["css/album.scss"],"names":[],"mappings":"AAMA,oCACE,aACE,iBACF,CAAC","file":"album.css","sourcesContent":["@charset \"utf-8\";\n\n@import \"_variables\";\n\n/** Main **/\n\n@media screen and (max-width: 768px) {\n  .description {\n    text-align: center\n  }\n}\n"]}

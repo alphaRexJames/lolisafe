@@ -1,15 +1,19 @@
 const bodyParser = require('body-parser')
 const clamd = require('clamdjs')
+const contentDisposition = require('content-disposition')
 const express = require('express')
 const helmet = require('helmet')
 const nunjucks = require('nunjucks')
 const path = require('path')
 const RateLimit = require('express-rate-limit')
 const readline = require('readline')
+const serveStatic = require('serve-static')
 const config = require('./config')
 const logger = require('./logger')
 const versions = require('./src/versions')
 const safe = express()
+
+logger.log('Starting lolisafe\u2026')
 
 process.on('uncaughtException', error => {
   logger.error(error, { prefix: 'Uncaught Exception: ' })
@@ -27,8 +31,18 @@ const nojs = require('./routes/nojs')
 
 const db = require('knex')(config.database)
 
-safe.use(helmet())
-if (config.trustProxy) safe.set('trust proxy', 1)
+safe.use(helmet({
+  contentSecurityPolicy: false,
+  hsts: false
+}))
+
+if (config.hsts instanceof Object && Object.keys(config.hsts).length) {
+  safe.use(helmet.hsts(config.hsts))
+}
+
+if (config.trustProxy) {
+  safe.set('trust proxy', 1)
+}
 
 // https://mozilla.github.io/nunjucks/api.html#configure
 nunjucks.configure('views', {
@@ -40,62 +54,119 @@ safe.set('view engine', 'njk')
 safe.enable('view cache')
 
 // Configure rate limits
-if (Array.isArray(config.rateLimits) && config.rateLimits.length)
+if (Array.isArray(config.rateLimits) && config.rateLimits.length) {
   for (const rateLimit of config.rateLimits) {
     const limiter = new RateLimit(rateLimit.config)
-    for (const route of rateLimit.routes)
+    for (const route of rateLimit.routes) {
       safe.use(route, limiter)
+    }
   }
+}
 
 safe.use(bodyParser.urlencoded({ extended: true }))
 safe.use(bodyParser.json())
 
-let setHeaders
+const cdnPages = [...config.pages]
+let setHeaders = res => {
+  res.set('Access-Control-Allow-Origin', '*')
+}
+
+const initServeStaticUploads = (opts = {}) => {
+  if (config.setContentDisposition) {
+    opts.preSetHeaders = async (res, req, path, stat) => {
+      try {
+        // Do only if accessing files from uploads' root directory (i.e. not thumbs, etc.)
+        // and only if they are GET requests
+        const relpath = path.replace(paths.uploads, '')
+        if (relpath.indexOf('/', 1) === -1 && req.method === 'GET') {
+          const name = relpath.substring(1)
+          const file = await db.table('files')
+            .where('name', name)
+            .select('original')
+            .first()
+          res.set('Content-Disposition', contentDisposition(file.original, { type: 'inline' }))
+        }
+      } catch (error) {
+        logger.error(error)
+      }
+    }
+    // serveStatic is just a modified express/serve-static module that allows specifying
+    // an async setHeaders function by the name preSetHeaders.
+    // The module will wait for the said function before creating send stream to client.
+    safe.use('/', serveStatic(paths.uploads, opts))
+  } else {
+    safe.use('/', express.static(paths.uploads, opts))
+  }
+}
 
 // Cache control (safe.fiery.me)
 if (config.cacheControl) {
   const cacheControls = {
-    // max-age: 30 days
-    default: 'public, max-age=2592000, must-revalidate, proxy-revalidate, immutable, stale-while-revalidate=86400, stale-if-error=604800',
-    // s-max-age: 30 days (only cache in proxy server)
-    // Obviously we have to purge proxy cache on every update
-    proxyOnly: 's-max-age=2592000, proxy-revalidate, stale-while-revalidate=86400, stale-if-error=604800',
+    // max-age: 6 months
+    static: 'public, max-age=15778800, immutable',
+    // s-max-age: 6 months (only cache in CDN)
+    cdn: 's-max-age=15778800, proxy-revalidate',
+    // validate cache's validity before using them (soft cache)
+    validate: 'no-cache',
+    // do not use cache at all
     disable: 'no-store'
   }
 
+  // By default soft cache everything
   safe.use('/', (req, res, next) => {
-    res.set('Cache-Control', cacheControls.proxyOnly)
+    res.set('Cache-Control', cacheControls.validate)
     next()
   })
 
-  // Do NOT cache these dynamic routes
-  safe.use(['/a', '/api', '/nojs'], (req, res, next) => {
-    res.set('Cache-Control', cacheControls.disable)
-    next()
-  })
+  // If using CDN, cache public pages in CDN
+  if (config.cacheControl !== 2) {
+    cdnPages.push('api/check')
+    for (const page of cdnPages) {
+      safe.use(`/${page === 'home' ? '' : page}`, (req, res, next) => {
+        res.set('Cache-Control', cacheControls.cdn)
+        next()
+      })
+    }
+  }
 
-  // Cache these in proxy server though
-  safe.use(['/api/check'], (req, res, next) => {
-    res.set('Cache-Control', cacheControls.proxyOnly)
-    next()
-  })
+  // If serving uploads with node
+  if (config.serveFilesWithNode) {
+    initServeStaticUploads({
+      setHeaders: res => {
+        res.set('Access-Control-Allow-Origin', '*')
+        // If using CDN, cache uploads in CDN as well
+        // Use with cloudflare.purgeCache enabled in config file
+        if (config.cacheControl !== 2) {
+          res.set('Cache-Control', cacheControls.cdn)
+        }
+      }
+    })
+  }
 
-  // Cache album ZIPs
-  safe.use(['/api/album/zip'], (req, res, next) => {
-    setHeaders(res)
-    next()
-  })
-
-  // For static assets (and uploads if serving with node)
+  // Function for static assets.
+  // This requires the assets to use version in their query string,
+  // as they will be cached by clients for a very long time.
   setHeaders = res => {
     res.set('Access-Control-Allow-Origin', '*')
-    res.set('Cache-Control', cacheControls.default)
+    res.set('Cache-Control', cacheControls.static)
   }
+
+  // Consider album ZIPs static as well, since they use version in their query string
+  safe.use(['/api/album/zip'], (req, res, next) => {
+    res.set('Access-Control-Allow-Origin', '*')
+    const versionString = parseInt(req.query.v)
+    if (versionString > 0) {
+      res.set('Cache-Control', cacheControls.static)
+    } else {
+      res.set('Cache-Control', cacheControls.disable)
+    }
+    next()
+  })
+} else if (config.serveFilesWithNode) {
+  initServeStaticUploads()
 }
 
-if (config.serveFilesWithNode)
-  safe.use('/', express.static(paths.uploads, { setHeaders }))
-
+// Static assets
 safe.use('/', express.static(paths.public, { setHeaders }))
 safe.use('/', express.static(paths.dist, { setHeaders }))
 
@@ -118,37 +189,48 @@ safe.use('/api', api)
 
     // Re-map version strings if cache control is enabled (safe.fiery.me)
     utils.versionStrings = {}
-    if (config.cacheControl)
-      for (const type in versions)
+    if (config.cacheControl) {
+      for (const type in versions) {
         utils.versionStrings[type] = `?_=${versions[type]}`
+      }
+      if (versions['1']) {
+        utils.clientVersion = versions['1']
+      }
+    }
+
+    // Cookie Policy
+    if (config.cookiePolicy) {
+      config.pages.push('cookiepolicy')
+    }
 
     // Check for custom pages, otherwise fallback to Nunjucks templates
     for (const page of config.pages) {
       const customPage = path.join(paths.customPages, `${page}.html`)
-      if (!await paths.access(customPage).catch(() => true))
+      if (!await paths.access(customPage).catch(() => true)) {
         safe.get(`/${page === 'home' ? '' : page}`, (req, res, next) => res.sendFile(customPage))
-      else if (page === 'home')
+      } else if (page === 'home') {
         safe.get('/', (req, res, next) => res.render(page, {
           config,
           versions: utils.versionStrings,
           gitHash: utils.gitHash
         }))
-      else
+      } else {
         safe.get(`/${page}`, (req, res, next) => res.render(page, {
           config,
           versions: utils.versionStrings
         }))
+      }
     }
 
     // Error pages
     safe.use((req, res, next) => {
-      if (config.cacheControl) res.removeHeader('Cache-Control')
+      res.setHeader('Cache-Control', 'no-store')
       res.status(404).sendFile(path.join(paths.errorRoot, config.errorPages[404]))
     })
 
     safe.use((error, req, res, next) => {
       logger.error(error)
-      if (config.cacheControl) res.removeHeader('Cache-Control')
+      res.setHeader('Cache-Control', 'no-store')
       res.status(500).sendFile(path.join(paths.errorRoot, config.errorPages[500]))
     })
 
@@ -170,8 +252,9 @@ safe.use('/api', api)
       logger.log(`${ip}:${port} ${version}`)
 
       utils.clamd.scanner = clamd.createScanner(ip, port)
-      if (!utils.clamd.scanner)
+      if (!utils.clamd.scanner) {
         throw 'Could not create clamd scanner'
+      }
     }
 
     // Cache file identifiers
@@ -185,23 +268,15 @@ safe.use('/api', api)
     }
 
     // Binds Express to port
-    await new Promise((resolve, reject) => {
-      try {
-        safe.listen(config.port, () => resolve())
-      } catch (error) {
-        reject(error)
-      }
-    })
-
+    await new Promise(resolve => safe.listen(config.port, () => resolve()))
     logger.log(`lolisafe started on port ${config.port}`)
 
     // Cache control (safe.fiery.me)
-    // Also only if explicitly using Cloudflare
-    if (config.cacheControl)
+    // Purge Cloudflare cache
+    if (config.cacheControl && config.cacheControl !== 2) {
       if (config.cloudflare.purgeCache) {
         logger.log('Cache control enabled, purging Cloudflare\'s cache...')
-        const routes = config.pages.concat(['api/check'])
-        const results = await utils.purgeCloudflareCache(routes)
+        const results = await utils.purgeCloudflareCache(cdnPages)
         let errored = false
         let succeeded = 0
         for (const result of results) {
@@ -212,36 +287,44 @@ safe.use('/api', api)
           }
           succeeded += result.files.length
         }
-        if (!errored)
+        if (!errored) {
           logger.log(`Successfully purged ${succeeded} cache`)
+        }
       } else {
         logger.log('Cache control enabled without Cloudflare\'s cache purging')
       }
+    }
 
-    // Temporary uploads
-    if (Array.isArray(config.uploads.temporaryUploadAges) && config.uploads.temporaryUploadAges.length) {
+    // Temporary uploads (only check for expired uploads if config.uploads.temporaryUploadsInterval is also set)
+    if (Array.isArray(config.uploads.temporaryUploadAges) &&
+      config.uploads.temporaryUploadAges.length &&
+      config.uploads.temporaryUploadsInterval) {
       let temporaryUploadsInProgress = false
       const temporaryUploadCheck = async () => {
-        if (temporaryUploadsInProgress)
-          return
+        if (temporaryUploadsInProgress) return
 
         temporaryUploadsInProgress = true
-        const result = await utils.bulkDeleteExpired()
+        try {
+          const result = await utils.bulkDeleteExpired()
 
-        if (result.expired.length) {
-          let logMessage = `Deleted ${result.expired.length} expired upload(s)`
-          if (result.failed.length)
-            logMessage += ` but unable to delete ${result.failed.length}`
+          if (result.expired.length) {
+            let logMessage = `Expired uploads: ${result.expired.length} deleted`
+            if (result.failed.length) {
+              logMessage += `, ${result.failed.length} errored`
+            }
 
-          logger.log(logMessage)
+            logger.log(logMessage)
+          }
+        } catch (error) {
+          // Simply print-out errors, then continue
+          logger.error(error)
         }
 
         temporaryUploadsInProgress = false
       }
-      temporaryUploadCheck()
 
-      if (config.uploads.temporaryUploadsInterval)
-        setInterval(temporaryUploadCheck, config.uploads.temporaryUploadsInterval)
+      temporaryUploadCheck()
+      setInterval(temporaryUploadCheck, config.uploads.temporaryUploadsInterval)
     }
 
     // NODE_ENV=development yarn start
@@ -253,10 +336,8 @@ safe.use('/api', api)
         prompt: ''
       }).on('line', line => {
         try {
-          if (line === 'rs')
-            return
-          if (line === '.exit')
-            return process.exit(0)
+          if (line === 'rs') return
+          if (line === '.exit') return process.exit(0)
           // eslint-disable-next-line no-eval
           logger.log(eval(line))
         } catch (error) {
@@ -265,7 +346,7 @@ safe.use('/api', api)
       }).on('SIGINT', () => {
         process.exit(0)
       })
-      logger.log('Development mode (disabled nunjucks caching & enabled readline interface)')
+      logger.log('DEVELOPMENT MODE: Disabled Nunjucks caching & enabled readline interface')
     }
   } catch (error) {
     logger.error(error)

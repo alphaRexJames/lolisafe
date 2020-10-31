@@ -3,9 +3,12 @@
 
 {% extends "_layout.njk" %}
 
+{% set enableUserAccounts = config.enableUserAccounts %}
+
 {% block stylesheets %}
-{{ super() }}
+<!-- Libs stylesheets -->
 <link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+{{ super() }}
 <link rel="stylesheet" href="css/sweetalert.css{{ versions[1] }}">
 {% endblock %}
 
@@ -14,6 +17,10 @@
 <script src="libs/sweetalert/sweetalert.min.js{{ versions[3] }}"></script>
 <script src="libs/axios/axios.min.js{{ versions[3] }}"></script>
 <script src="js/auth.js{{ versions[1] }}"></script>
+{% endblock %}
+
+{% block endmeta %}
+{% include "_partial/noscript-refresh.njk" %}
 {% endblock %}
 
 {% block content %}
@@ -27,21 +34,24 @@
           <h1 class="title">
             Dashboard Access
           </h1>
+          {% if enableUserAccounts -%}
           <h2 class="subtitle">
             Login or register
           </h2>
+          {%- endif %}
           <form id="authForm">
             <div class="field">
               <div class="control">
-                <input id="user" name="user" class="input" type="text" placeholder="Your username" minlength="4" maxlength="32">
+                <input id="user" name="user" class="input" type="text" placeholder="Username" minlength="4" maxlength="32">
               </div>
             </div>
             <div class="field">
               <div class="control">
-                <input id="pass" name="pass" class="input" type="password" placeholder="Your password" minlength="6" maxlength="64">
+                <input id="pass" name="pass" class="input" type="password" placeholder="Password" minlength="6" maxlength="64">
               </div>
             </div>
             <div class="field is-grouped is-grouped-right">
+              {% if enableUserAccounts -%}
               <div class="control">
                 <button id="registerBtn" type="button" class="button is-primary is-outlined">
                   <span class="icon">
@@ -50,6 +60,7 @@
                   <span>Register</span>
                 </button>
               </div>
+              {%- endif %}
               <div class="control">
                 <button id="loginBtn" type="submit" class="button is-info is-outlined">
                   <span class="icon">
@@ -68,5 +79,7 @@
 </section>
 
 {% include "_partial/loader.njk" %}
+{% set floatingHomeHideInitially = true %}
+{% include "_partial/floating-home.njk" %}
 {% include "_partial/noscript.njk" %}
 {% endblock %}

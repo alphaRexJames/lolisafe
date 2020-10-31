@@ -1,0 +1,10 @@
+{#
+  To conform with standard, put <noscript> for <meta http-equiv> inside <head>.
+  https://developer.mozilla.org/en-US/docs/Web/HTML/Element/meta
+  And may as well put <style> tag here, just in case.
+#}
+<noscript>
+  <style>body > section:not(#noscript) { display: none !important; }</style>
+  <!-- Redirect after 3 seconds -->
+  <meta http-equiv="refresh" content="3;url={{ noscriptRefreshUrl or 'nojs' }}">
+</noscript>
