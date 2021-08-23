@@ -44,7 +44,7 @@ page.onAxiosError = error => {
   const statusText = cloudflareErrors[error.response.status] || error.response.statusText
   const description = error.response.data && error.response.data.description
     ? error.response.data.description
-    : 'There was an error with the request, please check the console for more information.'
+    : 'There was an error with the request.\nPlease check the console for more information.'
 
   return swal(`${error.response.status} ${statusText}`, description, 'error')
 }

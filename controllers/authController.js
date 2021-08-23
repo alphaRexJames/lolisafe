@@ -5,8 +5,10 @@ const paths = require('./pathsController')
 const perms = require('./permissionController')
 const tokens = require('./tokenController')
 const utils = require('./utilsController')
+const apiErrorsHandler = require('./handlers/apiErrorsHandler.js')
+const ClientError = require('./utils/ClientError')
+const ServerError = require('./utils/ServerError')
 const config = require('./../config')
-const logger = require('./../logger')
 const db = require('knex')(config.database)
 
 // Don't forget to update min/max length of text inputs in auth.njk
@@ -31,79 +33,69 @@ const self = {
 const saltRounds = 10
 
 self.verify = async (req, res, next) => {
-  const username = typeof req.body.username === 'string'
-    ? req.body.username.trim()
-    : ''
-  if (!username) return res.json({ success: false, description: 'No username provided.' })
-
-  const password = typeof req.body.password === 'string'
-    ? req.body.password.trim()
-    : ''
-  if (!password) return res.json({ success: false, description: 'No password provided.' })
-
   try {
+    const username = typeof req.body.username === 'string'
+      ? req.body.username.trim()
+      : ''
+    if (!username) throw new ClientError('No username provided.')
+
+    const password = typeof req.body.password === 'string'
+      ? req.body.password.trim()
+      : ''
+    if (!password) throw new ClientError('No password provided.')
+
     const user = await db.table('users')
       .where('username', username)
       .first()
 
-    if (!user) return res.json({ success: false, description: 'Username does not exist.' })
+    if (!user) throw new ClientError('Username does not exist.')
 
     if (user.enabled === false || user.enabled === 0) {
-      return res.json({ success: false, description: 'This account has been disabled.' })
+      throw new ClientError('This account has been disabled.', { statusCode: 403 })
     }
 
     const result = await bcrypt.compare(password, user.password)
     if (result === false) {
-      return res.json({ success: false, description: 'Wrong password.' })
+      throw new ClientError('Wrong password.', { statusCode: 403 })
     } else {
-      return res.json({ success: true, token: user.token })
+      await res.json({ success: true, token: user.token })
     }
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
 self.register = async (req, res, next) => {
-  if (config.enableUserAccounts === false) {
-    return res.json({ success: false, description: 'Registration is currently disabled.' })
-  }
-
-  const username = typeof req.body.username === 'string'
-    ? req.body.username.trim()
-    : ''
-  if (username.length < self.user.min || username.length > self.user.max) {
-    return res.json({
-      success: false,
-      description: `Username must have ${self.user.min}-${self.user.max} characters.`
-    })
-  }
-
-  const password = typeof req.body.password === 'string'
-    ? req.body.password.trim()
-    : ''
-  if (password.length < self.pass.min || password.length > self.pass.max) {
-    return res.json({
-      success: false,
-      description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
-    })
-  }
-
   try {
+    if (config.enableUserAccounts === false) {
+      throw new ClientError('Registration is currently disabled.', { statusCode: 403 })
+    }
+
+    const username = typeof req.body.username === 'string'
+      ? req.body.username.trim()
+      : ''
+    if (username.length < self.user.min || username.length > self.user.max) {
+      throw new ClientError(`Username must have ${self.user.min}-${self.user.max} characters.`)
+    }
+
+    const password = typeof req.body.password === 'string'
+      ? req.body.password.trim()
+      : ''
+    if (password.length < self.pass.min || password.length > self.pass.max) {
+      throw new ClientError(`Password must have ${self.pass.min}-${self.pass.max} characters.`)
+    }
+
     const user = await db.table('users')
       .where('username', username)
       .first()
 
-    if (user) return res.json({ success: false, description: 'Username already exists.' })
+    if (user) throw new ClientError('Username already exists.')
 
     const hash = await bcrypt.hash(password, saltRounds)
 
     const token = await tokens.generateUniqueToken()
     if (!token) {
-      return res.json({
-        success: false,
-        description: 'Sorry, we could not allocate a unique token. Try again?'
-      })
+      throw new ServerError('Failed to allocate a unique token. Try again?')
     }
 
     await db.table('users')
@@ -118,107 +110,91 @@ self.register = async (req, res, next) => {
     utils.invalidateStatsCache('users')
     tokens.onHold.delete(token)
 
-    return res.json({ success: true, token })
+    await res.json({ success: true, token })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
 self.changePassword = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const password = typeof req.body.password === 'string'
-    ? req.body.password.trim()
-    : ''
-  if (password.length < self.pass.min || password.length > self.pass.max) {
-    return res.json({
-      success: false,
-      description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
-    })
-  }
-
   try {
+    const user = await utils.authorize(req)
+
+    const password = typeof req.body.password === 'string'
+      ? req.body.password.trim()
+      : ''
+    if (password.length < self.pass.min || password.length > self.pass.max) {
+      throw new ClientError(`Password must have ${self.pass.min}-${self.pass.max} characters.`)
+    }
+
     const hash = await bcrypt.hash(password, saltRounds)
 
     await db.table('users')
       .where('id', user.id)
       .update('password', hash)
 
-    return res.json({ success: true })
+    await res.json({ success: true })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
 self.assertPermission = (user, target) => {
   if (!target) {
-    throw new Error('Could not get user with the specified ID.')
+    throw new ClientError('Could not get user with the specified ID.')
   } else if (!perms.higher(user, target)) {
-    throw new Error('The user is in the same or higher group as you.')
+    throw new ClientError('The user is in the same or higher group as you.', { statusCode: 403 })
   } else if (target.username === 'root') {
-    throw new Error('Root user may not be tampered with.')
+    throw new ClientError('Root user may not be tampered with.', { statusCode: 403 })
   }
 }
 
 self.createUser = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) return res.status(403).end()
-
-  const username = typeof req.body.username === 'string'
-    ? req.body.username.trim()
-    : ''
-  if (username.length < self.user.min || username.length > self.user.max) {
-    return res.json({
-      success: false,
-      description: `Username must have ${self.user.min}-${self.user.max} characters.`
-    })
-  }
-
-  let password = typeof req.body.password === 'string'
-    ? req.body.password.trim()
-    : ''
-  if (password.length) {
-    if (password.length < self.pass.min || password.length > self.pass.max) {
-      return res.json({
-        success: false,
-        description: `Password must have ${self.pass.min}-${self.pass.max} characters.`
-      })
-    }
-  } else {
-    password = randomstring.generate(self.pass.rand)
-  }
-
-  let group = req.body.group
-  let permission
-  if (group !== undefined) {
-    permission = perms.permissions[group]
-    if (typeof permission !== 'number' || permission < 0) {
-      group = 'user'
-      permission = perms.permissions.user
-    }
-  }
-
   try {
-    const user = await db.table('users')
+    const user = await utils.authorize(req)
+
+    const isadmin = perms.is(user, 'admin')
+    if (!isadmin) return res.status(403).end()
+
+    const username = typeof req.body.username === 'string'
+      ? req.body.username.trim()
+      : ''
+    if (username.length < self.user.min || username.length > self.user.max) {
+      throw new ClientError(`Username must have ${self.user.min}-${self.user.max} characters.`)
+    }
+
+    let password = typeof req.body.password === 'string'
+      ? req.body.password.trim()
+      : ''
+    if (password.length) {
+      if (password.length < self.pass.min || password.length > self.pass.max) {
+        throw new ClientError(`Password must have ${self.pass.min}-${self.pass.max} characters.`)
+      }
+    } else {
+      password = randomstring.generate(self.pass.rand)
+    }
+
+    let group = req.body.group
+    let permission
+    if (group !== undefined) {
+      permission = perms.permissions[group]
+      if (typeof permission !== 'number' || permission < 0) {
+        group = 'user'
+        permission = perms.permissions.user
+      }
+    }
+
+    const exists = await db.table('users')
       .where('username', username)
       .first()
 
-    if (user) return res.json({ success: false, description: 'Username already exists.' })
+    if (exists) throw new ClientError('Username already exists.')
 
     const hash = await bcrypt.hash(password, saltRounds)
 
     const token = await tokens.generateUniqueToken()
     if (!token) {
-      return res.json({
-        success: false,
-        description: 'Sorry, we could not allocate a unique token. Try again?'
-      })
+      throw new ServerError('Failed to allocate a unique token. Try again?')
     }
 
     await db.table('users')
@@ -233,24 +209,22 @@ self.createUser = async (req, res, next) => {
     utils.invalidateStatsCache('users')
     tokens.onHold.delete(token)
 
-    return res.json({ success: true, username, password, group })
+    await res.json({ success: true, username, password, group })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
 self.editUser = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) return res.status(403).end()
-
-  const id = parseInt(req.body.id)
-  if (isNaN(id)) return res.json({ success: false, description: 'No user specified.' })
-
   try {
+    const user = await utils.authorize(req)
+
+    const isadmin = perms.is(user, 'admin')
+    if (!isadmin) throw new ClientError('', { statusCode: 403 })
+
+    const id = parseInt(req.body.id)
+    if (isNaN(id)) throw new ClientError('No user specified.')
+
     const target = await db.table('users')
       .where('id', id)
       .first()
@@ -261,7 +235,7 @@ self.editUser = async (req, res, next) => {
     if (req.body.username !== undefined) {
       update.username = String(req.body.username).trim()
       if (update.username.length < self.user.min || update.username.length > self.user.max) {
-        throw new Error(`Username must have ${self.user.min}-${self.user.max} characters.`)
+        throw new ClientError(`Username must have ${self.user.min}-${self.user.max} characters.`)
       }
     }
 
@@ -289,13 +263,9 @@ self.editUser = async (req, res, next) => {
 
     const response = { success: true, update }
     if (password) response.update.password = password
-    return res.json(response)
+    await res.json(response)
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({
-      success: false,
-      description: error.message || 'An unexpected error occurred. Try again?'
-    })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
@@ -305,17 +275,16 @@ self.disableUser = async (req, res, next) => {
 }
 
 self.deleteUser = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) return res.status(403).end()
-
-  const id = parseInt(req.body.id)
-  const purge = req.body.purge
-  if (isNaN(id)) return res.json({ success: false, description: 'No user specified.' })
-
   try {
+    const user = await utils.authorize(req)
+
+    const isadmin = perms.is(user, 'admin')
+    if (!isadmin) throw new ClientError('', { statusCode: 403 })
+
+    const id = parseInt(req.body.id)
+    const purge = req.body.purge
+    if (isNaN(id)) throw new ClientError('No user specified.')
+
     const target = await db.table('users')
       .where('id', id)
       .first()
@@ -358,6 +327,7 @@ self.deleteUser = async (req, res, next) => {
         try {
           await paths.unlink(path.join(paths.zips, `${album.identifier}.zip`))
         } catch (error) {
+          // Re-throw non-ENOENT error
           if (error.code !== 'ENOENT') throw error
         }
       }))
@@ -368,12 +338,9 @@ self.deleteUser = async (req, res, next) => {
       .del()
     utils.invalidateStatsCache('users')
 
-    return res.json({ success: true })
+    await res.json({ success: true })
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      description: error.message || 'An unexpected error occurred. Try again?'
-    })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
@@ -382,13 +349,12 @@ self.bulkDeleteUsers = async (req, res, next) => {
 }
 
 self.listUsers = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) return res.status(403).end()
-
   try {
+    const user = await utils.authorize(req)
+
+    const isadmin = perms.is(user, 'admin')
+    if (!isadmin) throw new ClientError('', { statusCode: 403 })
+
     const count = await db.table('users')
       .count('id as count')
       .then(rows => rows[0].count)
@@ -421,10 +387,9 @@ self.listUsers = async (req, res, next) => {
       pointers[upload.userid].usage += parseInt(upload.size)
     }
 
-    return res.json({ success: true, users, count })
+    await res.json({ success: true, users, count })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 

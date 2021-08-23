@@ -123,7 +123,7 @@ render.do = reload => {
   if (previousElement) previousElement.remove()
 
   const doRender = () => {
-    if (render.version === undefined) {
+    if (typeof render.version === 'undefined') {
       render.version = render.parseVersion()
     }
 

@@ -24,8 +24,9 @@
 
 {% block scripts %}
 {% if not nojs -%}
-<!-- Scripts -->
+<!-- Libs stylesheets -->
 <script src="../libs/lazyload/lazyload.min.js{{ versions[3] }}"></script>
+<!-- Scripts -->
 <script src="../js/album.js{{ versions[1] }}"></script>
 <script src="../js/misc/utils.js{{ versions[1] }}"></script>
 {%- endif %}
@@ -60,15 +61,35 @@
       <div class="level-right">
         <p class="level-item">
           {% if not files.length -%}
-          <a class="button is-primary is-outlined" title="There are no files in the album" disabled>Download album</a>
+          <a class="button is-primary is-outlined" disabled>
+            <span class="icon">
+              <i class="icon-cancel"></i>
+            </span>
+            <span>Empty album</span>
+          </a>
           {%- elif album.downloadLink -%}
             {%- if usingCDN -%}
-            <a class="button is-primary is-outlined" title="Be aware that album archive may be cached by CDN" href="../{{ album.downloadLink }}">Download album</a>
+            <a class="button is-primary is-outlined" title="Be aware that album archive may be cached by CDN" href="../{{ album.downloadLink }}">
+              <span class="icon">
+                <i class="icon-download"></i>
+              </span>
+              <span>Download album</span>
+            </a>
             {%- else -%}
-            <a class="button is-primary is-outlined" href="../{{ album.downloadLink }}">Download album</a>
+            <a class="button is-primary is-outlined" href="../{{ album.downloadLink }}">
+              <span class="icon">
+                <i class="icon-download"></i>
+              </span>
+              <span>Download album</span>
+            </a>
             {%- endif -%}
           {%- else -%}
-          <a class="button is-primary is-outlined" title="The album's owner has chosen to disable download" disabled>Download disabled</a>
+          <a class="button is-primary is-outlined" disabled>
+            <span class="icon">
+              <i class="icon-cancel"></i>
+            </span>
+            <span>Download disabled</span>
+          </a>
           {%- endif %}
         </p>
       </div>

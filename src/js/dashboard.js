@@ -1,4 +1,4 @@
-/* global swal, axios, ClipboardJS, LazyLoad */
+/* global swal, axios, ClipboardJS, LazyLoad, bulmaCollapsible */
 
 const lsKeys = {
   token: 'token',
@@ -70,6 +70,13 @@ const page = {
       pageNum: null
     }
   },
+  prevPageNums: {
+    uploads: null,
+    uploadsAll: null,
+    albums: null,
+    albumsAll: null,
+    users: null
+  },
 
   // ids of selected items (shared across pages and will be synced with localStorage)
   selected: {
@@ -90,10 +97,12 @@ const page = {
 
   clipboardJS: null,
   lazyLoad: null,
+  albumsSidebarCollapse: null,
+  albumsSidebarCollapsible: null,
 
-  imageExts: ['.webp', '.jpg', '.jpeg', '.gif', '.png', '.tiff', '.tif', '.svg'],
-  // TODO: Disable "Load original" button with non-streamable extensions
-  videoExts: ['.webm', '.mp4', '.wmv', '.avi', '.mov', '.mkv', '.m4v', '.m2ts'],
+  imageExts: ['.gif', '.jpeg', '.jpg', '.png', '.svg', '.tif', '.tiff', '.webp'],
+  videoExts: ['.3g2', '.3gp', '.asf', '.avchd', '.avi', '.divx', '.evo', '.flv', '.h264', '.h265', '.hevc', '.m2p', '.m2ts', '.m4v', '.mk3d', '.mkv', '.mov', '.mp4', '.mpeg', '.mpg', '.mxf', '.ogg', '.ogv', '.ps', '.qt', '.rmvb', '.ts', '.vob', '.webm', '.wmv'],
+  audioExts: ['.flac', '.mp3', '.wav', '.wma'],
 
   isSomethingLoading: false,
   fadingIn: null,
@@ -112,7 +121,10 @@ page.onError = error => {
   console.error(error)
 
   const content = document.createElement('div')
-  content.innerHTML = `<code>${error.toString()}</code>`
+  content.innerHTML = `
+    <p><code>${error.toString()}</code></p>
+    <p>Please check your console for more information.</p>
+  `
   return swal({
     title: 'An error occurred!',
     icon: 'error',
@@ -140,7 +152,7 @@ page.onAxiosError = error => {
   const statusText = cloudflareErrors[error.response.status] || error.response.statusText
   const description = error.response.data && error.response.data.description
     ? error.response.data.description
-    : 'There was an error with the request, please check the console for more information.'
+    : 'There was an error with the request.\nPlease check the console for more information.'
 
   return swal(`${error.response.status} ${statusText}`, description, 'error')
 }
@@ -240,7 +252,8 @@ page.prepareDashboard = () => {
 
       // eslint-disable-next-line compat/compat
       itemMenus[i].onclick.call(null, Object.assign(itemMenus[i].params || {}, {
-        trigger: event.currentTarget
+        trigger: event.currentTarget,
+        forceScroll: true
       }))
     })
 
@@ -406,7 +419,7 @@ page.domClick = event => {
   }
 }
 
-page.fadeAndScroll = disableFading => {
+page.fadeInDom = disableFading => {
   if (page.fadingIn) {
     clearTimeout(page.fadingIn)
     page.dom.classList.remove('fade-in')
@@ -418,9 +431,11 @@ page.fadeAndScroll = disableFading => {
       page.dom.classList.remove('fade-in')
     }, 500)
   }
+}
 
+page.scrollToDom = disableSmooth => {
   page.dom.scrollIntoView({
-    behavior: disableFading ? 'auto' : 'smooth',
+    behavior: disableSmooth ? 'auto' : 'smooth',
     block: 'start',
     inline: 'nearest'
   })
@@ -504,7 +519,7 @@ page.getUploads = (params = {}) => {
     params.pageNum = 0
   }
 
-  const url = params.album !== undefined
+  const url = typeof params.album !== 'undefined'
     ? `api/album/${params.album}/${params.pageNum}`
     : `api/uploads/${params.pageNum}`
 
@@ -658,9 +673,7 @@ page.getUploads = (params = {}) => {
     let unselected = false
 
     const showOriginalNames = page.views[page.currentView].originalNames
-    const hasExpiryDateColumn = files.some(file => {
-      return file.expirydate !== undefined
-    })
+    const hasExpiryDateColumn = files.some(file => typeof file.expirydate !== 'undefined')
 
     for (let i = 0; i < files.length; i++) {
       // Build full URLs
@@ -670,22 +683,28 @@ page.getUploads = (params = {}) => {
       }
 
       // Determine types
-      files[i].type = 'other'
-      const exec = /.[\w]+(\?|$)/.exec(files[i].file)
-      const extname = exec && exec[0] ? exec[0].toLowerCase() : null
+      const extname = files[i].extname.toLowerCase()
       if (page.imageExts.includes(extname)) {
         files[i].type = 'picture'
       } else if (page.videoExts.includes(extname)) {
         files[i].type = 'video'
+      } else if (page.audioExts.includes(extname)) {
+        files[i].type = 'audio'
+      } else {
+        files[i].type = 'other'
       }
+
+      files[i].previewable = files[i].thumb || files[i].type === 'audio'
 
       // Cache bare minimum data for thumbnails viewer
       page.cache[files[i].id] = {
         name: files[i].name,
         original: files[i].original,
+        extname: files[i].extname,
         thumb: files[i].thumb,
         file: files[i].file,
-        type: files[i].type
+        type: files[i].type,
+        previewable: files[i].previewable
       }
 
       // Prettify
@@ -707,7 +726,7 @@ page.getUploads = (params = {}) => {
         files[i].appendix = files[i].userid
           ? users[files[i].userid] || ''
           : ''
-      } else if (params.album === undefined) {
+      } else if (typeof params.album === 'undefined') {
         files[i].appendix = files[i].albumid
           ? albums[files[i].albumid] || ''
           : ''
@@ -734,7 +753,7 @@ page.getUploads = (params = {}) => {
         div.className = 'image-container column'
         div.dataset.id = upload.id
 
-        if (upload.thumb !== undefined) {
+        if (typeof upload.thumb !== 'undefined') {
           div.innerHTML = `<a class="image" href="${upload.file}" target="_blank"><img alt="${upload.name}" data-src="${upload.thumb}"/></a>`
         } else {
           div.innerHTML = `<a class="image" href="${upload.file}" target="_blank"><h1 class="title">${upload.extname || 'N/A'}</h1></a>`
@@ -743,7 +762,7 @@ page.getUploads = (params = {}) => {
         div.innerHTML += `
           <input type="checkbox" class="checkbox" title="Select" data-index="${i}" data-action="select"${upload.selected ? ' checked' : ''}>
           <div class="controls">
-            ${upload.thumb
+            ${upload.previewable
               ? `<a class="button is-small is-primary" title="Display preview" data-action="display-preview">
               <span class="icon">
                 <i class="${upload.type !== 'other' ? `icon-${upload.type}` : 'icon-doc-inv'}"></i>
@@ -792,13 +811,13 @@ page.getUploads = (params = {}) => {
                 <th class="controls"><input id="selectAll" class="checkbox" type="checkbox" title="Select all" data-action="select-all"></th>
                 <th title="Key: name">File name</th>
                 ${showOriginalNames ? '<th title="Key: original">Original name</th>' : ''}
-                ${params.album === undefined ? `<th title="Key: ${params.all ? 'userid">User' : 'albumid">Album'}</th>` : ''}
+                ${typeof params.album === 'undefined' ? `<th title="Key: ${params.all ? 'userid">User' : 'albumid">Album'}</th>` : ''}
                 ${allAlbums ? '<th title="Key: albumid">Album</th>' : ''}
                 <th title="Key: size">Size</th>
                 ${params.all ? '<th title="Key: ip">IP</th>' : ''}
                 <th title="Key: timestamp">Upload date</th>
                 ${hasExpiryDateColumn ? '<th title="Key: expirydate">Expiry date</th>' : ''}
-                <th></th>
+                <th class="has-text-right">(${response.data.count} total)</th>
               </tr>
             </thead>
             <tbody id="table">
@@ -820,14 +839,14 @@ page.getUploads = (params = {}) => {
           <td class="controls"><input type="checkbox" class="checkbox" title="Select" data-index="${i}" data-action="select"${upload.selected ? ' checked' : ''}></td>
           <th class="name"><a href="${upload.file}" target="_blank" title="${upload.file}">${upload.name}</a></th>
           ${showOriginalNames ? `<th class="originalname" title="${upload.original}">${upload.original}</th>` : ''}
-          ${params.album === undefined ? `<th class="appendix">${upload.appendix}</th>` : ''}
+          ${typeof params.album === 'undefined' ? `<th class="appendix">${upload.appendix}</th>` : ''}
           ${allAlbums ? `<th class="album">${upload.albumid ? (albums[upload.albumid] || '') : ''}</th>` : ''}
           <td class="prettybytes">${upload.prettyBytes}</td>
           ${params.all ? `<td class="ip">${upload.ip || ''}</td>` : ''}
           <td class="prettydate">${upload.prettyDate}</td>
           ${hasExpiryDateColumn ? `<td class="prettyexpirydate">${upload.prettyExpiryDate || '-'}</td>` : ''}
           <td class="controls has-text-right">
-            <a class="button is-small is-primary is-outlined" title="${upload.thumb ? 'Display preview' : 'File can\'t be previewed'}" data-action="display-preview"${upload.thumb ? '' : ' disabled'}>
+            <a class="button is-small is-primary is-outlined" title="${upload.previewable ? 'Display preview' : 'File can\'t be previewed'}" data-action="display-preview"${upload.previewable ? '' : ' disabled'}>
               <span class="icon">
                 <i class="${upload.type !== 'other' ? `icon-${upload.type}` : 'icon-doc-inv'}"></i>
               </span>
@@ -863,18 +882,27 @@ page.getUploads = (params = {}) => {
       selectAll.title = 'Unselect all'
     }
 
+    page.fadeInDom()
+
+    const pageNum = files.length ? params.pageNum : 0
+    if (params.forceScroll ||
+      page.prevPageNums[page.currentView] === null ||
+      page.prevPageNums[page.currentView] !== pageNum) {
+      const disableSmooth = !params.forceScroll && page.views[page.currentView].type === 'thumbs'
+      page.scrollToDom(disableSmooth)
+    }
+
     if (page.views[page.currentView].type === 'thumbs') {
-      page.fadeAndScroll(true)
       page.lazyLoad.update()
-    } else {
-      page.fadeAndScroll()
     }
 
     page.updateTrigger(params.trigger, 'active')
 
-    if (page.currentView === 'uploads') page.views.uploads.album = params.album
+    if (page.currentView === 'uploads') {
+      page.views.uploads.album = params.album
+    }
     page.views[page.currentView].filters = params.filters
-    page.views[page.currentView].pageNum = files.length ? params.pageNum : 0
+    page.views[page.currentView].pageNum = page.prevPageNums[page.currentView] = pageNum
   }).catch(error => {
     page.updateTrigger(params.trigger)
     page.onAxiosError(error)
@@ -917,7 +945,7 @@ page.toggleOriginalNames = element => {
 
 page.displayPreview = id => {
   const file = page.cache[id]
-  if (!file.thumb) return
+  if (!file.previewable) return
 
   const div = document.createElement('div')
   div.innerHTML = `
@@ -926,32 +954,29 @@ page.displayPreview = id => {
         <div class="has-text-weight-bold">${file.name}</div>
         <div>${file.original}</div>
       </p>
-      <p class="swal-display-thumb-container">
+      ${file.thumb
+        ? `<p class="swal-display-thumb-container">
         <img id="swalThumb" src="${file.thumb}">
-      </p>
+      </p>`
+        : ''}
     </div>
   `
 
-  if (file.file) {
-    const exec = /.[\w]+(\?|$)/.exec(file.file)
-    const extname = exec && exec[0] ? exec[0].toLowerCase() : null
-    const isimage = page.imageExts.includes(extname)
-    const isvideo = !isimage && page.videoExts.includes(extname)
-
-    if (isimage || isvideo) {
-      div.innerHTML += `
-        <div class="field has-text-centered">
-          <div class="controls">
-            <a id="swalOriginal" type="button" class="button is-info" data-original="${file.file}">
-              <span class="icon">
-                <i class="icon-arrows-cw"></i>
-              </span>
-              <span>Load original</span>
-            </a>
-          </div>
+  if (file.file && ['picture', 'video', 'audio'].includes(file.type)) {
+    div.innerHTML += `
+      <div class="field has-text-centered">
+        <div class="controls">
+          <a id="swalOriginal" type="button" class="button is-info">
+            <span class="icon">
+              <i class="icon-${file.type}"></i>
+            </span>
+            <span>${file.type === 'picture' ? 'Load original' : 'Play in embedded player'}</span>
+          </a>
         </div>
-      `
+      </div>
+    `
 
+    if (file.type === 'picture') {
       div.querySelector('#swalOriginal').addEventListener('click', event => {
         const trigger = event.currentTarget
         if (trigger.classList.contains('is-danger')) return
@@ -959,35 +984,29 @@ page.displayPreview = id => {
         trigger.classList.add('is-loading')
         const thumb = div.querySelector('#swalThumb')
 
-        if (isimage) {
-          thumb.src = file.file
-          thumb.onload = () => {
-            trigger.classList.add('is-hidden')
-            document.body.querySelector('.swal-overlay .swal-modal:not(.is-expanded)').classList.add('is-expanded')
-          }
-          thumb.onerror = event => {
-            event.currentTarget.classList.add('is-hidden')
-            trigger.className = 'button is-danger is-fullwidth'
-            trigger.innerHTML = `
-              <span class="icon">
-                <i class="icon-block"></i>
-              </span>
-              <span>Unable to load original</span>
-            `
-          }
-        } else if (isvideo) {
-          thumb.classList.add('is-hidden')
-          const video = document.createElement('video')
-          video.id = 'swalVideo'
-          video.controls = true
-          video.autoplay = true
-          video.src = file.file
-          thumb.insertAdjacentElement('afterend', video)
-
+        thumb.src = file.file
+        thumb.onload = () => {
           trigger.classList.add('is-hidden')
           document.body.querySelector('.swal-overlay .swal-modal:not(.is-expanded)').classList.add('is-expanded')
         }
+        thumb.onerror = event => {
+          event.currentTarget.classList.add('is-hidden')
+          trigger.className = 'button is-danger is-fullwidth'
+          trigger.innerHTML = `
+            <span class="icon">
+              <i class="icon-block"></i>
+            </span>
+            <span>Unable to load original</span>
+          `
+        }
       })
+    } else {
+      const match = file.file.match(/.*\/(.*)$/)
+      console.log(file.file, match)
+      if (match || match[1]) {
+        div.querySelector('#swalOriginal').setAttribute('href', `v/${match[1]}`)
+        div.querySelector('#swalOriginal').setAttribute('target', '_blank')
+      }
     }
   }
 
@@ -995,10 +1014,6 @@ page.displayPreview = id => {
     content: div,
     buttons: false
   }).then(() => {
-    // Destroy video, if necessary
-    const video = div.querySelector('#swalVideo')
-    if (video) video.remove()
-
     // Restore modal size
     document.body.querySelector('.swal-overlay .swal-modal').classList.remove('is-expanded')
   })
@@ -1148,8 +1163,9 @@ page.uploadFiltersHelp = element => {
     This key can also be specified more than once, where their order will decide the sorting steps.
 
     Finally, there are type-<b>is</b> keys to refine by types.
-    You can use <code>is:image</code> and <code>is:video</code> to list images and videos respectively.
-    This will only use image/video extensions whose thumbnails can be generated by the safe.
+    You can use <code>is:image</code>, <code>is:video</code>, and <code>is:audio</code> to list images, videos, audios respectively.
+    This will only use image, video and audio extensions that are whitelisted internally in the safe.
+    For images and videos specifically, they will be the ones whose thumbnails can be generated by the safe.
     Negation sign works for this key as well.
     Mixing inclusion and exclusion is not allowed (i.e. <code>is:image -is:video</code>, since the second key is redundant).
 
@@ -1335,7 +1351,8 @@ page.deleteUploadsByNames = (params = {}) => {
       </div>
     </form>
   `
-  page.fadeAndScroll()
+  page.fadeInDom()
+  page.scrollToDom()
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#submitBulkDelete').addEventListener('click', () => {
@@ -1536,7 +1553,7 @@ page.addUploadsToAlbum = (ids, callback) => {
   })
 
   // Get albums list then update content of swal
-  axios.get('api/albums').then(list => {
+  axios.get('api/albums', { headers: { simple: '1' } }).then(list => {
     if (list.data.success === false) {
       if (list.data.description === 'No token provided') {
         page.verifyToken(page.token)
@@ -1740,9 +1757,12 @@ page.getAlbums = (params = {}) => {
               <th>Name</th>
               ${params.all ? '<th>User</th>' : ''}
               <th>Uploads</th>
+              <th>Size</th>
               <th>Created at</th>
+              <th>ZIP size</th>
+              <th>ZIP generated at</th>
               <th>Public link</th>
-              <th></th>
+              <th class="has-text-right">(${response.data.count} total)</th>
             </tr>
           </thead>
           <tbody id="table">
@@ -1758,13 +1778,18 @@ page.getAlbums = (params = {}) => {
 
     for (let i = 0; i < albums.length; i++) {
       const album = albums[i]
-      const albumUrl = `${homeDomain}/a/${album.identifier}`
+      const urlPath = '/a/'
+      const albumUrlText = urlPath + album.identifier
+      const albumUrl = homeDomain + albumUrlText
 
       const selected = page.selected[page.currentView].includes(album.id)
       if (!selected) unselected = true
 
       // Prettify
+      album.hasZip = album.zipSize !== null
       album.prettyDate = page.getPrettyDate(new Date(album.timestamp * 1000))
+      album.prettyZipDate = album.hasZip ? page.getPrettyDate(new Date(album.zipGeneratedAt * 1000)) : null
+      album.isZipExpired = album.hasZip && !(album.zipGeneratedAt > album.editedAt)
 
       // Server-side explicitly expect this value to consider an album as disabled
       const enabled = album.enabled !== 0
@@ -1773,7 +1798,10 @@ page.getAlbums = (params = {}) => {
         download: album.download,
         public: album.public,
         description: album.description,
-        enabled
+        enabled,
+        homeDomain,
+        urlPath,
+        identifier: album.identifier
       }
 
       const tr = document.createElement('tr')
@@ -1784,8 +1812,11 @@ page.getAlbums = (params = {}) => {
         <th${enabled ? '' : ' class="has-text-grey"'}>${album.name}</td>
         ${params.all ? `<th>${album.userid ? (users[album.userid] || '') : ''}</th>` : ''}
         <th>${album.uploads}</th>
+        <td>${page.getPrettyBytes(album.size)}</td>
         <td>${album.prettyDate}</td>
-        <td><a ${enabled && album.public ? '' : 'class="is-linethrough" '}href="${albumUrl}" target="_blank">${albumUrl}</a></td>
+        <td>${album.hasZip ? page.getPrettyBytes(album.zipSize) : '-'}</td>
+        <td${album.isZipExpired ? ' class="has-text-warning" title="This album has been modified since the last time its ZIP was generated."' : ''}>${album.hasZip ? album.prettyZipDate : '-'}</td$>
+        <td><a ${enabled && album.public ? '' : 'class="is-linethrough" '}href="${albumUrl}" target="_blank">${albumUrlText}</a></td>
         <td class="has-text-right" data-id="${album.id}">
           <a class="button is-small is-primary is-outlined" title="Edit album" data-action="edit-album">
             <span class="icon is-small">
@@ -1825,11 +1856,21 @@ page.getAlbums = (params = {}) => {
       selectAll.title = 'Unselect all'
     }
 
-    page.fadeAndScroll()
+    page.fadeInDom()
+
+    const pageNum = albums.length ? params.pageNum : 0
+    if (params.forceScroll ||
+      page.prevPageNums[page.currentView] === null ||
+      page.prevPageNums[page.currentView] !== pageNum) {
+      page.scrollToDom()
+    }
+
     page.updateTrigger(params.trigger, 'active')
 
-    if (page.currentView === 'albumsAll') page.views[page.currentView].filters = params.filters
-    page.views[page.currentView].pageNum = albums.length ? params.pageNum : 0
+    if (page.currentView === 'albumsAll') {
+      page.views[page.currentView].filters = params.filters
+    }
+    page.views[page.currentView].pageNum = page.prevPageNums[page.currentView] = pageNum
   }).catch(error => {
     page.updateTrigger(params.trigger)
     page.onAxiosError(error)
@@ -1839,6 +1880,9 @@ page.getAlbums = (params = {}) => {
 page.editAlbum = id => {
   const album = page.cache[id]
   if (!album) return
+
+  const albumUrlText = album.urlPath + album.identifier
+  const albumUrl = album.homeDomain + albumUrlText
 
   const div = document.createElement('div')
   div.innerHTML = `
@@ -1887,6 +1931,9 @@ page.editAlbum = id => {
           Request new public link
         </label>
       </div>
+    </div>
+    <div class="field">
+      <p>Current public link: <a href="${albumUrl}" target="_blank" class="is-underline">${albumUrlText}</a></p>
     </div>
   `
 
@@ -2036,7 +2083,7 @@ page.submitAlbum = element => {
 }
 
 page.getAlbumsSidebar = () => {
-  axios.get('api/albums', { headers: { sidebar: '1' } }).then(response => {
+  axios.get('api/albums', { headers: { simple: '1' } }).then(response => {
     if (!response) return
 
     if (response.data.success === false) {
@@ -2049,18 +2096,27 @@ page.getAlbumsSidebar = () => {
 
     const albums = response.data.albums
     const count = response.data.count
-    const albumsContainer = document.querySelector('#albumsContainer')
+    const albumsSidebar = document.querySelector('#albumsSidebar')
 
     // Clear albums sidebar if necessary
-    const oldAlbums = albumsContainer.querySelectorAll('li > a')
+    const oldAlbums = albumsSidebar.querySelectorAll('li > a')
+    const diffCount = oldAlbums.length !== count
     if (oldAlbums.length) {
       for (let i = 0; i < oldAlbums.length; i++) {
         page.menus.splice(page.menus.indexOf(oldAlbums[i]), 1)
       }
-      albumsContainer.innerHTML = ''
+      albumsSidebar.innerHTML = ''
     }
 
-    if (albums === undefined) return
+    page.albumsSidebarCollapse.innerText = page.albumsSidebarCollapsible.collapsed()
+      ? page.albumsSidebarCollapse.dataset.textExpand
+      : page.albumsSidebarCollapse.dataset.textCollapse
+
+    if (!albums || !albums.length) {
+      page.albumsSidebarCollapsible.collapse()
+      page.albumsSidebarCollapse.setAttribute('disabled', 'disabled')
+      return
+    }
 
     for (let i = 0; i < albums.length; i++) {
       const album = albums[i]
@@ -2079,24 +2135,14 @@ page.getAlbumsSidebar = () => {
       page.menus.push(a)
 
       li.appendChild(a)
-      albumsContainer.appendChild(li)
+      albumsSidebar.appendChild(li)
     }
 
-    if (count > albums.length) {
-      const li = document.createElement('li')
-      const a = document.createElement('a')
-      a.className = 'is-relative'
-      a.innerHTML = '...'
-      a.title = `You have ${count} albums, but the sidebar can only list your first ${albums.length} albums.`
-
-      a.addEventListener('click', event => {
-        page.getAlbums({
-          trigger: document.querySelector('#itemManageYourAlbums')
-        })
-      })
-
-      li.appendChild(a)
-      albumsContainer.appendChild(li)
+    page.albumsSidebarCollapse.removeAttribute('disabled')
+    if (!page.albumsSidebarCollapsible.collapsed() && diffCount) {
+      // Since it's not possible to refresh collapsible's height with bulmaCollapsible APIs,
+      // forcefully collapse albums sidebar if albums count is different with the previous iteration.
+      page.albumsSidebarCollapsible.collapse()
     }
   }).catch(page.onAxiosError)
 }
@@ -2122,7 +2168,8 @@ page.changeToken = (params = {}) => {
       </div>
     </div>
   `
-  page.fadeAndScroll()
+  page.fadeInDom()
+  page.scrollToDom()
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#getNewToken').addEventListener('click', event => {
@@ -2187,7 +2234,8 @@ page.changePassword = (params = {}) => {
       </div>
     </form>
   `
-  page.fadeAndScroll()
+  page.fadeInDom()
+  page.scrollToDom()
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#sendChangePassword').addEventListener('click', event => {
@@ -2381,7 +2429,7 @@ page.getUsers = (params = {}) => {
               <th title="Key: permission">Group</th>
               <th title="Key: registration">Registration date</th>
               <th title="Key: timestamp">Last token update</th>
-              <th></th>
+              <th class="has-text-right">(${response.data.count} total)</th>
             </tr>
           </thead>
           <tbody id="table">
@@ -2467,10 +2515,18 @@ page.getUsers = (params = {}) => {
       selectAll.title = 'Unselect all'
     }
 
-    page.fadeAndScroll()
+    page.fadeInDom()
+
+    const pageNum = users.length ? params.pageNum : 0
+    if (params.forceScroll ||
+      page.prevPageNums[page.currentView] === null ||
+      page.prevPageNums[page.currentView] !== pageNum) {
+      page.scrollToDom()
+    }
+
     page.updateTrigger(params.trigger, 'active')
 
-    page.views[page.currentView].pageNum = users.length ? params.pageNum : 0
+    page.views[page.currentView].pageNum = page.prevPageNums[page.currentView] = pageNum
   }).catch(error => {
     page.updateTrigger(params.trigger)
     page.onAxiosError(error)
@@ -2562,12 +2618,17 @@ page.editUser = id => {
   const user = page.cache[id]
   if (!user) return
 
+  let isHigher = false
   const groupOptions = Object.keys(page.permissions).map((g, i, a) => {
     const selected = g === user.displayGroup
+    if (selected) {
+      isHigher = typeof a[i + 1] !== 'undefined' && page.permissions[a[i + 1]]
+    }
     const disabled = !(a[i + 1] && page.permissions[a[i + 1]])
     return `<option value="${g}"${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}>${g}</option>`
   }).join('\n')
 
+  const isDisabledHelper = isHigher ? '' : ' disabled'
   const div = document.createElement('div')
   div.innerHTML = `
     <div class="field">
@@ -2576,14 +2637,14 @@ page.editUser = id => {
     <div class="field">
       <label class="label">Username</label>
       <div class="controls">
-        <input id="swalUsername" class="input" type="text" value="${user.username || ''}">
+        <input id="swalUsername" class="input" type="text" value="${user.username || ''}"${isDisabledHelper}>
       </div>
     </div>
     <div class="field">
       <label class="label">User group</label>
       <div class="control">
         <div class="select is-fullwidth">
-          <select id="swalGroup">
+          <select id="swalGroup"${isDisabledHelper}>
             ${groupOptions}
           </select>
         </div>
@@ -2592,7 +2653,7 @@ page.editUser = id => {
     <div class="field">
       <div class="control">
         <label class="checkbox">
-          <input id="swalEnabled" type="checkbox" ${user.enabled ? 'checked' : ''}>
+          <input id="swalEnabled" type="checkbox"${user.enabled ? ' checked' : ''}${isDisabledHelper}>
           Enabled
         </label>
       </div>
@@ -2600,11 +2661,17 @@ page.editUser = id => {
     <div class="field">
       <div class="control">
         <label class="checkbox">
-          <input id="swalResetPassword" type="checkbox">
+          <input id="swalResetPassword" type="checkbox"${isDisabledHelper}>
           Reset password
         </label>
       </div>
     </div>
+    ${isHigher
+      ? ''
+      : `<div class="notification is-danger">
+      You <strong>cannot</strong> modify user in the same or higher group as you.
+    </div>`
+    }
   `
 
   swal({
@@ -2727,7 +2794,7 @@ page.deleteUser = id => {
   const content = document.createElement('div')
   content.innerHTML = `
     <p>You will be deleting a user named <b>${page.cache[id].username}</b>.<p>
-    <p>Their files will remain, unless you choose otherwise.</p>
+    <p>Their uploads will still remain, unless you choose otherwise.</p>
   `
 
   swal({
@@ -2738,11 +2805,11 @@ page.deleteUser = id => {
     buttons: {
       cancel: true,
       confirm: {
-        text: 'Yes, delete it!',
+        text: 'Yes, ONLY the user!',
         closeModal: false
       },
       purge: {
-        text: 'Yes, and the uploads too!',
+        text: 'Yes, AND their uploads too!',
         value: 'purge',
         className: 'swal-button--danger',
         closeModal: false
@@ -2867,29 +2934,44 @@ page.getStatistics = (params = {}) => {
         `
       } else {
         try {
-          const types = response.data.stats[keys[i]]._types || {}
           const valKeys = Object.keys(response.data.stats[keys[i]])
           for (let j = 0; j < valKeys.length; j++) {
-            // Skip keys that starts with an underscore
-            if (/^_/.test(valKeys[j])) continue
+            const data = response.data.stats[keys[i]][valKeys[j]]
+            const type = typeof data === 'object' ? data.type : 'auto'
+            const value = typeof data === 'object' ? data.value : data
 
-            const value = response.data.stats[keys[i]][valKeys[j]]
-            let parsed = value
-
-            // Parse values with some preset formatting
-            if ((types.number || []).includes(valKeys[j])) parsed = value.toLocaleString()
-            if ((types.byte || []).includes(valKeys[j])) parsed = page.getPrettyBytes(value)
-            if ((types.byteUsage || []).includes(valKeys[j])) {
-              parsed = `${page.getPrettyBytes(value.used)} / ${page.getPrettyBytes(value.total)} (${Math.floor(value.used / value.total * 100)}%)`
+            let parsed
+            switch (type) {
+              case 'byte':
+                parsed = page.getPrettyBytes(value)
+                break
+              case 'byteUsage': {
+                // Reasoning: https://github.com/sebhildebrandt/systeminformation/issues/464#issuecomment-756406053
+                const totalForPercentage = typeof value.available !== 'undefined'
+                  ? (value.used + value.available)
+                  : value.total
+                parsed = `${page.getPrettyBytes(value.used)} / ${page.getPrettyBytes(value.total)} (${(value.used / totalForPercentage * 100).toFixed(2)}%)`
+                break
+              }
+              case 'uptime':
+                parsed = page.getPrettyUptime(value)
+                break
+              case 'auto':
+                switch (typeof value) {
+                  case 'number':
+                    parsed = value.toLocaleString()
+                    break
+                  default:
+                    parsed = value
+                }
+                break
+              default:
+                parsed = value
             }
-            if ((types.uptime || []).includes(valKeys[j])) parsed = page.getPrettyUptime(value)
 
-            const string = valKeys[j]
-              .replace(/([A-Z])/g, ' $1')
-              .replace(/(^|\s)(cpu|db|zip)/gi, s => s.toUpperCase())
             rows += `
               <tr>
-                <th class="capitalize">${string}</th>
+                <th>${valKeys[j]}</th>
                 <td>${parsed}</td>
               </tr>
             `
@@ -2933,7 +3015,8 @@ page.getStatistics = (params = {}) => {
     }
 
     page.dom.innerHTML = content
-    page.fadeAndScroll()
+    page.fadeInDom()
+    page.scrollToDom()
     page.updateTrigger(params.trigger, 'active')
   }).catch(error => {
     page.updateTrigger(params.trigger)
@@ -2949,13 +3032,13 @@ window.addEventListener('DOMContentLoaded', () => {
     Object.defineProperty(Object, 'assign', {
       value: function assign (target, varArgs) { // .length of function is 2
         'use strict'
-        if (target === null || target === undefined) {
+        if (target === null || typeof target === 'undefined') {
           throw new TypeError('Cannot convert undefined or null to object')
         }
         const to = Object(target)
         for (let i = 1; i < arguments.length; i++) {
           const nextSource = arguments[i]
-          if (nextSource !== null && nextSource !== undefined) {
+          if (nextSource !== null && typeof nextSource !== 'undefined') {
             for (const nextKey in nextSource) {
               // Avoid bugs when hasOwnProperty is shadowed
               if (Object.prototype.hasOwnProperty.call(nextSource, nextKey)) {
@@ -2996,4 +3079,15 @@ window.addEventListener('DOMContentLoaded', () => {
   page.clipboardJS.on('error', page.onError)
 
   page.lazyLoad = new LazyLoad()
+
+  page.albumsSidebarCollapse = document.querySelector('#albumsSidebarCollapse')
+
+  /* eslint-disable-next-line new-cap */
+  page.albumsSidebarCollapsible = new bulmaCollapsible(document.querySelector('#albumsSidebar'))
+  page.albumsSidebarCollapsible.on('before:expand', event => {
+    page.albumsSidebarCollapse.innerText = page.albumsSidebarCollapse.dataset.textCollapse
+  })
+  page.albumsSidebarCollapsible.on('before:collapse', event => {
+    page.albumsSidebarCollapse.innerText = page.albumsSidebarCollapse.dataset.textExpand
+  })
 })

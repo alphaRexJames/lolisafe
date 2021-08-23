@@ -6,8 +6,7 @@ To bump the version, it's recommended to use use `yarn bump-versions`.
 
 ```none
 $ yarn bump-versions
-$ node ./scripts/bump-versions.js
-
+$ node ./scripts/bump-versions.j
 Bump version strings for client-side assets.
 
 Usage:

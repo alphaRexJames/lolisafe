@@ -247,6 +247,12 @@
       "css": "exchange",
       "code": 61676,
       "src": "fontawesome"
+    },
+    {
+      "uid": "81db033e704eb7c586a365559d7c0f36",
+      "css": "audio",
+      "code": 61895,
+      "src": "fontawesome"
     }
   ]
 }

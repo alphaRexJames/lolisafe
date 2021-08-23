@@ -25,8 +25,7 @@ const map = {
   for (const tableName of tableNames) {
     const columnNames = Object.keys(map[tableName])
     for (const columnName of columnNames) {
-      if (await db.schema.hasColumn(tableName, columnName))
-        continue
+      if (await db.schema.hasColumn(tableName, columnName)) continue
 
       const columnType = map[tableName][columnName]
       await db.schema.table(tableName, table => {

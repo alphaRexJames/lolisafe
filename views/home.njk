@@ -22,6 +22,7 @@
 
 {% block scripts %}
 {{ super() }}
+<!-- Libs scripts -->
 <script src="libs/sweetalert/sweetalert.min.js{{ versions[3] }}"></script>
 <script src="libs/dropzone/dropzone.min.js{{ versions[3] }}"></script>
 <script src="libs/axios/axios.min.js{{ versions[3] }}"></script>
@@ -30,6 +31,7 @@
 {% if cookiePolicy -%}
 <script src="libs/cookieconsent/cookieconsent.min.js{{ versions[3] }}"></script>
 {%- endif %}
+<!-- Scripts -->
 {# We assign an ID for this so that the script can find out version string for render images #}
 {#<script id="renderScript" data-version="{{ versions[4] }}" src="js/misc/render.js{{ versions[1] }}" async></script>#}
 {#<script src="js/misc/newsfeed.js{{ versions[1] }}" async></script>#}
@@ -123,7 +125,7 @@
                   {%- endif %}{{ ' ' -}}
                   {% set comma = joiner(', ') %}
                   {%- for extension in urlExtensionsFilter -%}
-                  {{ comma() }}{{ extension | replace('.', '') | upper }}
+                  {{ comma() }}{{ extension | replace('.', '', 1) | upper }}
                   {%- endfor %}.
                 {{- ' ' }}{% endif -%}
 

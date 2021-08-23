@@ -5,10 +5,13 @@ const multer = require('multer')
 const path = require('path')
 const randomstring = require('randomstring')
 const searchQuery = require('search-query-parser')
-const multerStorage = require('./multerStorageController')
 const paths = require('./pathsController')
 const perms = require('./permissionController')
 const utils = require('./utilsController')
+const apiErrorsHandler = require('./handlers/apiErrorsHandler.js')
+const ClientError = require('./utils/ClientError')
+const multerStorage = require('./utils/multerStorage')
+const ServerError = require('./utils/ServerError')
 const config = require('./../config')
 const logger = require('./../logger')
 const db = require('knex')(config.database)
@@ -33,8 +36,10 @@ const chunkedUploads = config.uploads.chunkSize &&
   config.uploads.chunkSize.default
 const chunkedUploadsTimeout = config.uploads.chunkSize.timeout || 1800000
 const chunksData = {}
-//  Hard-coded min chunk size of 1 MB (e.g. 50 MB = max 50 chunks)
+// Hard-coded min chunk size of 1 MB (e.g. 50 MB = max 50 chunks)
 const maxChunksCount = maxSize
+// Use fs.copyFile() instead of fs.rename() if chunks dir is NOT inside uploads dir
+const chunksCopyFile = !paths.chunks.startsWith(paths.uploads)
 
 const extensionsFilter = Array.isArray(config.extensionsFilter) &&
   config.extensionsFilter.length
@@ -108,7 +113,7 @@ const executeMulter = multer({
   fileFilter (req, file, cb) {
     file.extname = utils.extname(file.originalname)
     if (self.isExtensionFiltered(file.extname)) {
-      return cb(`${file.extname ? `${file.extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`)
+      return cb(new ClientError(`${file.extname ? `${file.extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`))
     }
 
     // Re-map Dropzone keys so people can manually use the API without prepending 'dz'
@@ -119,7 +124,7 @@ const executeMulter = multer({
     }
 
     if (req.body.chunkindex !== undefined && !chunkedUploads) {
-      return cb('Chunked uploads are disabled at the moment.')
+      return cb(new ClientError('Chunked uploads are disabled at the moment.'))
     } else {
       return cb(null, true)
     }
@@ -137,7 +142,7 @@ const executeMulter = multer({
           })
           .catch(error => {
             logger.error(error)
-            return cb('Could not process the chunked upload. Try again?')
+            return cb(new ServerError('Could not process the chunked upload. Try again?'))
           })
       } else {
         return cb(null, paths.uploads)
@@ -163,7 +168,7 @@ self.isExtensionFiltered = extname => {
 
   // If there are extensions that have to be filtered
   if (extname && extensionsFilter) {
-    const match = config.extensionsFilter.some(extension => extname === extension.toLowerCase())
+    const match = config.extensionsFilter.includes(extname.toLowerCase())
     const whitelist = config.extensionsFilterMode === 'whitelist'
     if ((!whitelist && match) || (whitelist && !match)) return true
   }
@@ -217,14 +222,14 @@ self.getUniqueRandomName = async (length, extension) => {
         logger.log(`${name} is already in use (${i + 1}/${utils.idMaxTries}).`)
         continue
       } catch (error) {
-        // Re-throw error
+        // Re-throw non-ENOENT error
         if (error & error.code !== 'ENOENT') throw error
       }
     }
     return name
   }
 
-  throw 'Sorry, we could not allocate a unique random name. Try again?'
+  throw new ServerError('Failed to allocate a unique name for the upload. Try again?')
 }
 
 self.parseUploadAge = age => {
@@ -251,40 +256,35 @@ self.parseStripTags = stripTags => {
 }
 
 self.upload = async (req, res, next) => {
-  let user
-  if (config.private === true) {
-    user = await utils.authorize(req, res)
-    if (!user) return
-  } else if (req.headers.token) {
-    user = await db.table('users')
-      .where('token', req.headers.token)
-      .first()
-    if (user && (user.enabled === false || user.enabled === 0)) {
-      return res.json({ success: false, description: 'This account has been disabled.' })
-    }
-  }
-
-  let albumid = parseInt(req.headers.albumid || req.params.albumid)
-  if (isNaN(albumid)) albumid = null
-
-  let age = null
-  if (temporaryUploads) {
-    age = self.parseUploadAge(req.headers.age)
-    if (!age && !config.uploads.temporaryUploadAges.includes(0)) {
-      return res.json({ success: false, description: 'Permanent uploads are not permitted.' })
-    }
-  }
-
   try {
+    let user
+    if (config.private === true) {
+      user = await utils.authorize(req)
+    } else if (req.headers.token) {
+      user = await utils.assertUser(req.headers.token)
+    }
+
+    if (config.privateUploadGroup) {
+      if (!user || !perms.is(user, config.privateUploadGroup)) {
+        throw new ClientError(config.privateUploadCustomResponse || 'Your usergroup is not permitted to upload new files.', { statusCode: 403 })
+      }
+    }
+
+    let albumid = parseInt(req.headers.albumid || req.params.albumid)
+    if (isNaN(albumid)) albumid = null
+
+    let age = null
+    if (temporaryUploads) {
+      age = self.parseUploadAge(req.headers.age)
+      if (!age && !config.uploads.temporaryUploadAges.includes(0)) {
+        throw new ClientError('Permanent uploads are not permitted.', { statusCode: 403 })
+      }
+    }
+
     const func = req.body.urls ? self.actuallyUploadUrls : self.actuallyUploadFiles
     await func(req, res, user, albumid, age)
   } catch (error) {
-    const isError = error instanceof Error
-    if (isError) logger.error(error)
-    return res.status(400).json({
-      success: false,
-      description: isError ? error.toString() : error
-    })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
@@ -299,14 +299,14 @@ self.actuallyUploadFiles = async (req, res, user, albumid, age) => {
       'LIMIT_UNEXPECTED_FILE'
     ]
     if (suppress.includes(error.code)) {
-      throw error.toString()
+      throw new ClientError(error.toString())
     } else {
       throw error
     }
   }
 
   if (!req.files || !req.files.length) {
-    throw 'No files.'
+    throw new ClientError('No files.')
   }
 
   // If chunked uploads is enabled and the uploaded file is a chunk, then just say that it was a success
@@ -334,32 +334,32 @@ self.actuallyUploadFiles = async (req, res, user, albumid, age) => {
       utils.unlinkFile(info.data.filename).catch(logger.error)
     ))
 
-    throw 'Empty files are not allowed.'
+    throw new ClientError('Empty files are not allowed.')
   }
 
-  if (utils.clamd.scanner) {
+  if (utils.clamscan.instance) {
     const scanResult = await self.scanFiles(req, user, infoMap)
-    if (scanResult) throw scanResult
+    if (scanResult) throw new ClientError(scanResult)
   }
 
   await self.stripTags(req, infoMap)
 
   const result = await self.storeFilesToDb(req, res, user, infoMap)
-  await self.sendUploadResponse(req, res, user, result)
+  return self.sendUploadResponse(req, res, user, result)
 }
 
 self.actuallyUploadUrls = async (req, res, user, albumid, age) => {
   if (!config.uploads.urlMaxSize) {
-    throw 'Upload by URLs is disabled at the moment.'
+    throw new ClientError('Upload by URLs is disabled at the moment.', { statusCode: 403 })
   }
 
   const urls = req.body.urls
   if (!urls || !(urls instanceof Array)) {
-    throw 'Missing "urls" property (array).'
+    throw new ClientError('Missing "urls" property (array).')
   }
 
   if (urls.length > maxFilesPerUpload) {
-    throw `Maximum ${maxFilesPerUpload} URLs at a time.`
+    throw new ClientError(`Maximum ${maxFilesPerUpload} URLs at a time.`)
   }
 
   const downloaded = []
@@ -371,20 +371,16 @@ self.actuallyUploadUrls = async (req, res, user, albumid, age) => {
 
       // Extensions filter
       let filtered = false
-      if (['blacklist', 'whitelist'].includes(config.uploads.urlExtensionsFilterMode)) {
-        if (urlExtensionsFilter) {
-          const match = config.uploads.urlExtensionsFilter.some(extension => extname === extension.toLowerCase())
-          const whitelist = config.uploads.urlExtensionsFilterMode === 'whitelist'
-          filtered = ((!whitelist && match) || (whitelist && !match))
-        } else {
-          throw 'Invalid extensions filter, please contact the site owner.'
-        }
+      if (urlExtensionsFilter && ['blacklist', 'whitelist'].includes(config.uploads.urlExtensionsFilterMode)) {
+        const match = config.uploads.urlExtensionsFilter.includes(extname.toLowerCase())
+        const whitelist = config.uploads.urlExtensionsFilterMode === 'whitelist'
+        filtered = ((!whitelist && match) || (whitelist && !match))
       } else {
         filtered = self.isExtensionFiltered(extname)
       }
 
       if (filtered) {
-        throw `${extname ? `${extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`
+        throw new ClientError(`${extname ? `${extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`)
       }
 
       if (config.uploads.urlProxy) {
@@ -423,7 +419,7 @@ self.actuallyUploadUrls = async (req, res, user, albumid, age) => {
         }))
 
       if (fetchFile.status !== 200) {
-        throw `${fetchFile.status} ${fetchFile.statusText}`
+        throw new ServerError(`${fetchFile.status} ${fetchFile.statusText}`)
       }
 
       infoMap.push({
@@ -444,9 +440,9 @@ self.actuallyUploadUrls = async (req, res, user, albumid, age) => {
     // If no errors encountered, clear cache of downloaded files
     downloaded.length = 0
 
-    if (utils.clamd.scanner) {
+    if (utils.clamscan.instance) {
       const scanResult = await self.scanFiles(req, user, infoMap)
-      if (scanResult) throw scanResult
+      if (scanResult) throw new ClientError(scanResult)
     }
 
     const result = await self.storeFilesToDb(req, res, user, infoMap)
@@ -464,41 +460,31 @@ self.actuallyUploadUrls = async (req, res, user, albumid, age) => {
     const suppress = [
       / over limit:/
     ]
-    if (!suppress.some(t => t.test(errorString))) {
-      throw error
+    if (suppress.some(t => t.test(errorString))) {
+      throw new ClientError(errorString)
     } else {
-      throw errorString
+      throw error
     }
   }
 }
 
 self.finishChunks = async (req, res, next) => {
-  if (!chunkedUploads) {
-    return res.json({ success: false, description: 'Chunked upload is disabled at the moment.' })
-  }
-
-  let user
-  if (config.private === true) {
-    user = await utils.authorize(req, res)
-    if (!user) return
-  } else if (req.headers.token) {
-    user = await db.table('users')
-      .where('token', req.headers.token)
-      .first()
-    if (user && (user.enabled === false || user.enabled === 0)) {
-      return res.json({ success: false, description: 'This account has been disabled.' })
-    }
-  }
-
   try {
+    if (!chunkedUploads) {
+      throw new ClientError('Chunked upload is disabled.', { statusCode: 403 })
+    }
+
+    let user
+    if (config.private === true) {
+      user = await utils.authorize(req)
+      if (!user) return
+    } else if (req.headers.token) {
+      user = await utils.assertUser(req.headers.token)
+    }
+
     await self.actuallyFinishChunks(req, res, user)
   } catch (error) {
-    const isError = error instanceof Error
-    if (isError) logger.error(error)
-    return res.status(400).json({
-      success: false,
-      description: isError ? error.toString() : error
-    })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
@@ -509,7 +495,7 @@ self.actuallyFinishChunks = async (req, res, user) => {
 
   const files = req.body.files
   if (!Array.isArray(files) || !files.length || files.some(check)) {
-    throw 'An unexpected error occurred.'
+    throw new ClientError('Bad request.')
   }
 
   const infoMap = []
@@ -519,33 +505,33 @@ self.actuallyFinishChunks = async (req, res, user) => {
       chunksData[file.uuid].stream.end()
 
       if (chunksData[file.uuid].chunks > maxChunksCount) {
-        throw 'Too many chunks.'
+        throw new ClientError('Too many chunks.')
       }
 
       file.extname = typeof file.original === 'string' ? utils.extname(file.original) : ''
       if (self.isExtensionFiltered(file.extname)) {
-        throw `${file.extname ? `${file.extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`
+        throw new ClientError(`${file.extname ? `${file.extname.substr(1).toUpperCase()} files` : 'Files with no extension'} are not permitted.`)
       }
 
       if (temporaryUploads) {
         file.age = self.parseUploadAge(file.age)
         if (!file.age && !config.uploads.temporaryUploadAges.includes(0)) {
-          throw 'Permanent uploads are not permitted.'
+          throw new ClientError('Permanent uploads are not permitted.')
         }
       }
 
       file.size = chunksData[file.uuid].stream.bytesWritten
       if (config.filterEmptyFile && file.size === 0) {
-        throw 'Empty files are not allowed.'
+        throw new ClientError('Empty files are not allowed.')
       } else if (file.size > maxSizeBytes) {
-        throw `File too large. Chunks are bigger than ${maxSize} MB.`
+        throw new ClientError(`File too large. Chunks are bigger than ${maxSize} MB.`)
       }
 
       // Double-check file size
       const tmpfile = path.join(chunksData[file.uuid].root, chunksData[file.uuid].filename)
       const lstat = await paths.lstat(tmpfile)
       if (lstat.size !== file.size) {
-        throw `File size mismatched (${lstat.size} vs. ${file.size}).`
+        throw new ClientError(`File size mismatched (${lstat.size} vs. ${file.size}).`)
       }
 
       // Generate name
@@ -553,8 +539,13 @@ self.actuallyFinishChunks = async (req, res, user) => {
       const name = await self.getUniqueRandomName(length, file.extname)
 
       // Move tmp file to final destination
+      // For fs.copyFile(), tmpfile will eventually be unlinked by self.cleanUpChunks()
       const destination = path.join(paths.uploads, name)
-      await paths.rename(tmpfile, destination)
+      if (chunksCopyFile) {
+        await paths.copyFile(tmpfile, destination)
+      } else {
+        await paths.rename(tmpfile, destination)
+      }
       const hash = chunksData[file.uuid].hasher.digest('hex')
 
       // Continue even when encountering errors
@@ -577,9 +568,9 @@ self.actuallyFinishChunks = async (req, res, user) => {
       infoMap.push({ path: destination, data })
     }))
 
-    if (utils.clamd.scanner) {
+    if (utils.clamscan.instance) {
       const scanResult = await self.scanFiles(req, user, infoMap)
-      if (scanResult) throw scanResult
+      if (scanResult) throw new ClientError(scanResult)
     }
 
     await self.stripTags(req, infoMap)
@@ -595,7 +586,7 @@ self.actuallyFinishChunks = async (req, res, user) => {
         if (chunksData[file.uuid].hasher) {
           chunksData[file.uuid].hasher.dispose()
         }
-      } catch (error) {}
+      } catch (_) {}
       self.cleanUpChunks(file.uuid).catch(logger.error)
     })
 
@@ -608,6 +599,7 @@ self.cleanUpChunks = async (uuid, onTimeout) => {
   // Remove tmp file
   await paths.unlink(path.join(chunksData[uuid].root, chunksData[uuid].filename))
     .catch(error => {
+      // Re-throw non-ENOENT error
       if (error.code !== 'ENOENT') logger.error(error)
     })
 
@@ -620,31 +612,30 @@ self.cleanUpChunks = async (uuid, onTimeout) => {
 }
 
 self.scanFiles = async (req, user, infoMap) => {
-  if (user && utils.clamd.groupBypass && perms.is(user, utils.clamd.groupBypass)) {
-    // logger.log(`[ClamAV]: Skipping ${infoMap.length} file(s), ${utils.clamd.groupBypass} group bypass`)
+  if (user && utils.clamscan.groupBypass && perms.is(user, utils.clamscan.groupBypass)) {
+    // logger.log(`[ClamAV]: Skipping ${infoMap.length} file(s), ${utils.clamscan.groupBypass} group bypass`)
     return false
   }
 
   const foundThreats = []
   const results = await Promise.all(infoMap.map(async info => {
-    if (utils.clamd.whitelistExtensions && utils.clamd.whitelistExtensions.includes(info.data.extname)) {
+    if (utils.clamscan.whitelistExtensions && utils.clamscan.whitelistExtensions.includes(info.data.extname)) {
       return // logger.log(`[ClamAV]: Skipping ${info.data.filename}, extension whitelisted`)
     }
 
-    if (utils.clamd.maxSize && info.data.size > utils.clamd.maxSize) {
-      return // logger.log(`[ClamAV]: Skipping ${info.data.filename}, size ${info.data.size} > ${utils.clamd.maxSize}`)
+    if (utils.clamscan.maxSize && info.data.size > utils.clamscan.maxSize) {
+      return // logger.log(`[ClamAV]: Skipping ${info.data.filename}, size ${info.data.size} > ${utils.clamscan.maxSize}`)
     }
 
-    const reply = await utils.clamd.scanner.scanFile(info.path, utils.clamd.timeout, utils.clamd.chunkSize)
-    if (!reply.includes('OK') || reply.includes('FOUND')) {
-      // eslint-disable-next-line no-control-regex
-      const foundThreat = reply.replace(/^stream: /, '').replace(/ FOUND\u0000$/, '')
-      logger.log(`[ClamAV]: ${info.data.filename}: ${foundThreat} FOUND.`)
-      foundThreats.push(foundThreat)
+    const response = await utils.clamscan.instance.is_infected(info.path)
+    if (response.is_infected) {
+      logger.log(`[ClamAV]: ${info.data.filename}: ${response.viruses.join(', ')}`)
+      foundThreats.push(...response.viruses)
     }
   })).then(() => {
     if (foundThreats.length) {
-      return `Threat found: ${foundThreats[0]}${foundThreats.length > 1 ? ', and more' : ''}.`
+      const more = foundThreats.length > 1
+      return `Threat${more ? 's' : ''} detected: ${foundThreats[0]}${more ? ', and more' : ''}.`
     }
   }).catch(error => {
     logger.error(`[ClamAV]: ${error.toString()}`)
@@ -793,7 +784,7 @@ self.storeFilesToDb = async (req, res, user, infoMap) => {
 
 self.sendUploadResponse = async (req, res, user, result) => {
   // Send response
-  res.json({
+  return res.json({
     success: true,
     files: result.map(file => {
       const map = {
@@ -826,7 +817,7 @@ self.sendUploadResponse = async (req, res, user, result) => {
   })
 }
 
-self.delete = async (req, res) => {
+self.delete = async (req, res, next) => {
   // Map /api/delete requests to /api/bulkdelete
   let body
   if (req.method === 'POST') {
@@ -846,530 +837,504 @@ self.delete = async (req, res) => {
   } */
 
   req.body = body
-  return self.bulkDelete(req, res)
+  return self.bulkDelete(req, res, next)
 }
 
-self.bulkDelete = async (req, res) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const field = req.body.field || 'id'
-  const values = req.body.values
-
-  if (!Array.isArray(values) || !values.length) {
-    return res.json({ success: false, description: 'No array of files specified.' })
-  }
-
+self.bulkDelete = async (req, res, next) => {
   try {
+    const user = await utils.authorize(req)
+
+    const field = req.body.field || 'id'
+    const values = req.body.values
+
+    if (!Array.isArray(values) || !values.length) {
+      throw new ClientError('No array of files specified.')
+    }
+
     const failed = await utils.bulkDeleteFromDb(field, values, user)
-    return res.json({ success: true, failed })
+    await res.json({ success: true, failed })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
-self.list = async (req, res) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
+self.list = async (req, res, next) => {
+  try {
+    const user = await utils.authorize(req)
 
-  const all = req.headers.all === '1'
-  const filters = req.headers.filters
-  const minoffset = Number(req.headers.minoffset) || 0
-  const ismoderator = perms.is(user, 'moderator')
-  if (all && !ismoderator) return res.status(403).end()
+    const all = req.headers.all === '1'
+    const filters = req.headers.filters
+    const minoffset = Number(req.headers.minoffset) || 0
+    const ismoderator = perms.is(user, 'moderator')
+    if (all && !ismoderator) return res.status(403).end()
 
-  const basedomain = config.domain
+    const basedomain = config.domain
 
-  // Thresholds for regular users
-  const MAX_WILDCARDS_IN_KEY = 2
-  const MAX_TEXT_QUERIES = 3 // non-keyed keywords
-  const MAX_SORT_KEYS = 1
-  const MAX_IS_KEYS = 1
+    // Thresholds for regular users
+    const MAX_WILDCARDS_IN_KEY = 2
+    const MAX_TEXT_QUERIES = 3 // non-keyed keywords
+    const MAX_SORT_KEYS = 1
+    const MAX_IS_KEYS = 1
 
-  const filterObj = {
-    uploaders: [],
-    excludeUploaders: [],
-    queries: {
-      exclude: {}
-    },
-    typeIs: [
-      'image',
-      'video'
-    ],
-    flags: {}
-  }
-
-  const sortObj = {
-    // Cast columns to specific type if they are stored differently
-    casts: {
-      size: 'integer'
-    },
-    // Columns mapping
-    maps: {
-      date: 'timestamp',
-      expiry: 'expirydate',
-      originalname: 'original'
-    },
-    // Columns with which to use SQLite's NULLS LAST option
-    nullsLast: [
-      'userid',
-      'expirydate',
-      'ip'
-    ],
-    parsed: []
-  }
-
-  // Parse glob wildcards into SQL wildcards
-  function sqlLikeParser (pattern) {
-    // Escape SQL operators
-    const escaped = pattern
-      .replace(/(?<!\\)%/g, '\\%')
-      .replace(/(?<!\\)_/g, '\\_')
-
-    // Look for any glob operators
-    const match = pattern.match(/(?<!\\)(\*|\?)/g)
-    if (match && match.length) {
-      return {
-        count: match.length,
-        // Replace glob operators with their SQL equivalents
-        escaped: escaped
-          .replace(/(?<!\\)\*/g, '%')
-          .replace(/(?<!\\)\?/g, '_')
-      }
-    } else {
-      return {
-        count: 0,
-        // Assume partial match
-        escaped: `%${escaped}%`
-      }
-    }
-  }
-
-  if (filters) {
-    const keywords = []
-
-    if (req.params.id === undefined) keywords.push('albumid')
-
-    // Only allow filtering by 'ip' and 'user' keys when listing all uploads
-    if (all) keywords.push('ip', 'user')
-
-    const ranges = [
-      'date',
-      'expiry'
-    ]
-
-    keywords.push('is', 'sort', 'orderby')
-    filterObj.queries = searchQuery.parse(filters, {
-      keywords,
-      ranges,
-      tokenize: true,
-      alwaysArray: true,
-      offsets: false
-    })
-
-    // Accept orderby as alternative for sort
-    if (filterObj.queries.orderby) {
-      if (!filterObj.queries.sort) filterObj.queries.sort = []
-      filterObj.queries.sort.push(...filterObj.queries.orderby)
-      delete filterObj.queries.orderby
+    const filterObj = {
+      uploaders: [],
+      excludeUploaders: [],
+      queries: {
+        exclude: {}
+      },
+      typeIs: [
+        'image',
+        'video',
+        'audio'
+      ],
+      flags: {}
     }
 
-    // For some reason, single value won't be in Array even with 'alwaysArray' option
-    if (typeof filterObj.queries.exclude.text === 'string') {
-      filterObj.queries.exclude.text = [filterObj.queries.exclude.text]
-    }
-
-    // Text (non-keyed keywords) queries
-    let textQueries = 0
-    if (filterObj.queries.text) textQueries += filterObj.queries.text.length
-    if (filterObj.queries.exclude.text) textQueries += filterObj.queries.exclude.text.length
-
-    // Regular user threshold check
-    if (!ismoderator && textQueries > MAX_TEXT_QUERIES) {
-      return res.json({
-        success: false,
-        description: `Users are only allowed to use ${MAX_TEXT_QUERIES} non-keyed keyword${MAX_TEXT_QUERIES === 1 ? '' : 's'} at a time.`
-      })
-    }
-
-    if (filterObj.queries.text) {
-      for (let i = 0; i < filterObj.queries.text.length; i++) {
-        const result = sqlLikeParser(filterObj.queries.text[i])
-        if (!ismoderator && result.count > MAX_WILDCARDS_IN_KEY) {
-          return res.json({
-            success: false,
-            description: `Users are only allowed to use ${MAX_WILDCARDS_IN_KEY} wildcard${MAX_WILDCARDS_IN_KEY === 1 ? '' : 's'} per key.`
-          })
-        }
-        filterObj.queries.text[i] = result.escaped
-      }
-    }
-
-    if (filterObj.queries.exclude.text) {
-      for (let i = 0; i < filterObj.queries.exclude.text.length; i++) {
-        const result = sqlLikeParser(filterObj.queries.exclude.text[i])
-        if (!ismoderator && result.count > MAX_WILDCARDS_IN_KEY) {
-          return res.json({
-            success: false,
-            description: `Users are only allowed to use ${MAX_WILDCARDS_IN_KEY} wildcard${MAX_WILDCARDS_IN_KEY === 1 ? '' : 's'} per key.`
-          })
-        }
-        filterObj.queries.exclude.text[i] = result.escaped
-      }
-    }
-
-    for (const key of keywords) {
-      let queryIndex = -1
-      let excludeIndex = -1
-
-      // Make sure keyword arrays only contain unique values
-      if (filterObj.queries[key]) {
-        filterObj.queries[key] = filterObj.queries[key].filter((v, i, a) => a.indexOf(v) === i)
-        queryIndex = filterObj.queries[key].indexOf('-')
-      }
-      if (filterObj.queries.exclude[key]) {
-        filterObj.queries.exclude[key] = filterObj.queries.exclude[key].filter((v, i, a) => a.indexOf(v) === i)
-        excludeIndex = filterObj.queries.exclude[key].indexOf('-')
-      }
-
-      // Flag to match NULL values
-      const inQuery = queryIndex !== -1
-      const inExclude = excludeIndex !== -1
-      if (inQuery || inExclude) {
-        // Prioritize exclude keys when both types found
-        filterObj.flags[`${key}Null`] = inExclude ? false : inQuery
-        if (inQuery) {
-          if (filterObj.queries[key].length === 1) {
-            // Delete key to avoid unexpected behavior
-            delete filterObj.queries[key]
-          } else {
-            filterObj.queries[key].splice(queryIndex, 1)
-          }
-        }
-        if (inExclude) {
-          if (filterObj.queries.exclude[key].length === 1) {
-            // Delete key to avoid unexpected behavior
-            delete filterObj.queries.exclude[key]
-          } else {
-            filterObj.queries.exclude[key].splice(excludeIndex, 1)
-          }
-        }
-      }
-    }
-
-    const parseDate = (date, minoffset, resetMs) => {
-      // [YYYY][/MM][/DD] [HH][:MM][:SS]
-      // e.g. 2020/01/01 00:00:00, 2018/01/01 06, 2019/11, 12:34:00
-      const match = date.match(/^(\d{4})?(\/\d{2})?(\/\d{2})?\s?(\d{2})?(:\d{2})?(:\d{2})?$/)
-
-      if (match) {
-        let offset = 0
-        if (minoffset !== undefined) {
-          offset = 60000 * (utils.timezoneOffset - minoffset)
-        }
-
-        const dateObj = new Date(Date.now() + offset)
-
-        if (match[1] !== undefined) {
-          dateObj.setFullYear(Number(match[1]), // full year
-            match[2] !== undefined ? (Number(match[2].slice(1)) - 1) : 0, // month, zero-based
-            match[3] !== undefined ? Number(match[3].slice(1)) : 1) // date
-        }
-
-        if (match[4] !== undefined) {
-          dateObj.setHours(Number(match[4]), // hours
-            match[5] !== undefined ? Number(match[5].slice(1)) : 0, // minutes
-            match[6] !== undefined ? Number(match[6].slice(1)) : 0) // seconds
-        }
-
-        if (resetMs) {
-          dateObj.setMilliseconds(0)
-        }
-
-        // Calculate timezone differences
-        return new Date(dateObj.getTime() - offset)
-      } else {
-        return null
-      }
-    }
-
-    // Parse dates to timestamps
-    for (const range of ranges) {
-      if (filterObj.queries[range]) {
-        if (filterObj.queries[range].from) {
-          const parsed = parseDate(filterObj.queries[range].from, minoffset, true)
-          filterObj.queries[range].from = parsed ? Math.floor(parsed / 1000) : null
-        }
-        if (filterObj.queries[range].to) {
-          const parsed = parseDate(filterObj.queries[range].to, minoffset, true)
-          filterObj.queries[range].to = parsed ? Math.ceil(parsed / 1000) : null
-        }
-      }
-    }
-
-    // Query users table for user IDs
-    if (filterObj.queries.user || filterObj.queries.exclude.user) {
-      const usernames = []
-      if (filterObj.queries.user) {
-        usernames.push(...filterObj.queries.user)
-      }
-      if (filterObj.queries.exclude.user) {
-        usernames.push(...filterObj.queries.exclude.user)
-      }
-
-      const uploaders = await db.table('users')
-        .whereIn('username', usernames)
-        .select('id', 'username')
-
-      // If no matches, or mismatched results
-      if (!uploaders || (uploaders.length !== usernames.length)) {
-        const notFound = usernames.filter(username => {
-          return !uploaders.find(uploader => uploader.username === username)
-        })
-        if (notFound) {
-          return res.json({
-            success: false,
-            description: `User${notFound.length === 1 ? '' : 's'} not found: ${notFound.join(', ')}.`
-          })
-        }
-      }
-
-      for (const uploader of uploaders) {
-        if (filterObj.queries.user && filterObj.queries.user.includes(uploader.username)) {
-          filterObj.uploaders.push(uploader)
-        } else {
-          filterObj.excludeUploaders.push(uploader)
-        }
-      }
-
-      // Delete keys to avoid unexpected behavior
-      delete filterObj.queries.user
-      delete filterObj.queries.exclude.user
-    }
-
-    // Parse sort keys
-    if (filterObj.queries.sort) {
-      const allowed = [
+    const sortObj = {
+      // Cast columns to specific type if they are stored differently
+      casts: {
+        size: 'integer'
+      },
+      // Columns mapping
+      maps: {
+        date: 'timestamp',
+        expiry: 'expirydate',
+        originalname: 'original'
+      },
+      // Columns with which to use SQLite's NULLS LAST option
+      nullsLast: [
+        'userid',
         'expirydate',
-        'id',
-        'name',
-        'original',
-        'size',
-        'timestamp'
+        'ip'
+      ],
+      parsed: []
+    }
+
+    // Parse glob wildcards into SQL wildcards
+    function sqlLikeParser (pattern) {
+      // Escape SQL operators
+      const escaped = pattern
+        .replace(/(?<!\\)%/g, '\\%')
+        .replace(/(?<!\\)_/g, '\\_')
+
+      // Look for any glob operators
+      const match = pattern.match(/(?<!\\)(\*|\?)/g)
+      if (match && match.length) {
+        return {
+          count: match.length,
+          // Replace glob operators with their SQL equivalents
+          escaped: escaped
+            .replace(/(?<!\\)\*/g, '%')
+            .replace(/(?<!\\)\?/g, '_')
+        }
+      } else {
+        return {
+          count: 0,
+          // Assume partial match
+          escaped: `%${escaped}%`
+        }
+      }
+    }
+
+    if (filters) {
+      const keywords = []
+
+      if (req.params.id === undefined) keywords.push('albumid')
+
+      // Only allow filtering by 'ip' and 'user' keys when listing all uploads
+      if (all) keywords.push('ip', 'user')
+
+      const ranges = [
+        'date',
+        'expiry'
       ]
 
-      // Only allow sorting by 'albumid' when not listing album's uploads
-      if (req.params.id === undefined) allowed.push('albumid')
+      keywords.push('is', 'sort', 'orderby')
+      filterObj.queries = searchQuery.parse(filters, {
+        keywords,
+        ranges,
+        tokenize: true,
+        alwaysArray: true,
+        offsets: false
+      })
 
-      // Only allow sorting by 'ip' and 'userid' columns when listing all uploads
-      if (all) allowed.push('ip', 'userid')
+      // Accept orderby as alternative for sort
+      if (filterObj.queries.orderby) {
+        if (!filterObj.queries.sort) filterObj.queries.sort = []
+        filterObj.queries.sort.push(...filterObj.queries.orderby)
+        delete filterObj.queries.orderby
+      }
 
-      for (const obQuery of filterObj.queries.sort) {
-        const tmp = obQuery.toLowerCase().split(':')
-        const column = sortObj.maps[tmp[0]] || tmp[0]
+      // For some reason, single value won't be in Array even with 'alwaysArray' option
+      if (typeof filterObj.queries.exclude.text === 'string') {
+        filterObj.queries.exclude.text = [filterObj.queries.exclude.text]
+      }
 
-        if (!allowed.includes(column)) {
-          // Alert users if using disallowed/missing columns
-          return res.json({
-            success: false,
-            description: `Column \`${column}\` cannot be used for sorting.\n\nTry the following instead:\n${allowed.join(', ')}`
+      // Text (non-keyed keywords) queries
+      let textQueries = 0
+      if (filterObj.queries.text) textQueries += filterObj.queries.text.length
+      if (filterObj.queries.exclude.text) textQueries += filterObj.queries.exclude.text.length
+
+      // Regular user threshold check
+      if (!ismoderator && textQueries > MAX_TEXT_QUERIES) {
+        throw new ClientError(`Users are only allowed to use ${MAX_TEXT_QUERIES} non-keyed keyword${MAX_TEXT_QUERIES === 1 ? '' : 's'} at a time.`)
+      }
+
+      if (filterObj.queries.text) {
+        for (let i = 0; i < filterObj.queries.text.length; i++) {
+          const result = sqlLikeParser(filterObj.queries.text[i])
+          if (!ismoderator && result.count > MAX_WILDCARDS_IN_KEY) {
+            throw new ClientError(`Users are only allowed to use ${MAX_WILDCARDS_IN_KEY} wildcard${MAX_WILDCARDS_IN_KEY === 1 ? '' : 's'} per key.`)
+          }
+          filterObj.queries.text[i] = result.escaped
+        }
+      }
+
+      if (filterObj.queries.exclude.text) {
+        for (let i = 0; i < filterObj.queries.exclude.text.length; i++) {
+          const result = sqlLikeParser(filterObj.queries.exclude.text[i])
+          if (!ismoderator && result.count > MAX_WILDCARDS_IN_KEY) {
+            throw new ClientError(`Users are only allowed to use ${MAX_WILDCARDS_IN_KEY} wildcard${MAX_WILDCARDS_IN_KEY === 1 ? '' : 's'} per key.`)
+          }
+          filterObj.queries.exclude.text[i] = result.escaped
+        }
+      }
+
+      for (const key of keywords) {
+        let queryIndex = -1
+        let excludeIndex = -1
+
+        // Make sure keyword arrays only contain unique values
+        if (filterObj.queries[key]) {
+          filterObj.queries[key] = filterObj.queries[key].filter((v, i, a) => a.indexOf(v) === i)
+          queryIndex = filterObj.queries[key].indexOf('-')
+        }
+        if (filterObj.queries.exclude[key]) {
+          filterObj.queries.exclude[key] = filterObj.queries.exclude[key].filter((v, i, a) => a.indexOf(v) === i)
+          excludeIndex = filterObj.queries.exclude[key].indexOf('-')
+        }
+
+        // Flag to match NULL values
+        const inQuery = queryIndex !== -1
+        const inExclude = excludeIndex !== -1
+        if (inQuery || inExclude) {
+          // Prioritize exclude keys when both types found
+          filterObj.flags[`${key}Null`] = inExclude ? false : inQuery
+          if (inQuery) {
+            if (filterObj.queries[key].length === 1) {
+              // Delete key to avoid unexpected behavior
+              delete filterObj.queries[key]
+            } else {
+              filterObj.queries[key].splice(queryIndex, 1)
+            }
+          }
+          if (inExclude) {
+            if (filterObj.queries.exclude[key].length === 1) {
+              // Delete key to avoid unexpected behavior
+              delete filterObj.queries.exclude[key]
+            } else {
+              filterObj.queries.exclude[key].splice(excludeIndex, 1)
+            }
+          }
+        }
+      }
+
+      const parseDate = (date, minoffset, resetMs) => {
+        // [YYYY][/MM][/DD] [HH][:MM][:SS]
+        // e.g. 2020/01/01 00:00:00, 2018/01/01 06, 2019/11, 12:34:00
+        const match = date.match(/^(\d{4})?(\/\d{2})?(\/\d{2})?\s?(\d{2})?(:\d{2})?(:\d{2})?$/)
+
+        if (match) {
+          let offset = 0
+          if (minoffset !== undefined) {
+            offset = 60000 * (utils.timezoneOffset - minoffset)
+          }
+
+          const dateObj = new Date(Date.now() + offset)
+
+          if (match[1] !== undefined) {
+            dateObj.setFullYear(Number(match[1]), // full year
+              match[2] !== undefined ? (Number(match[2].slice(1)) - 1) : 0, // month, zero-based
+              match[3] !== undefined ? Number(match[3].slice(1)) : 1) // date
+          }
+
+          if (match[4] !== undefined) {
+            dateObj.setHours(Number(match[4]), // hours
+              match[5] !== undefined ? Number(match[5].slice(1)) : 0, // minutes
+              match[6] !== undefined ? Number(match[6].slice(1)) : 0) // seconds
+          }
+
+          if (resetMs) {
+            dateObj.setMilliseconds(0)
+          }
+
+          // Calculate timezone differences
+          return new Date(dateObj.getTime() - offset)
+        } else {
+          return null
+        }
+      }
+
+      // Parse dates to timestamps
+      for (const range of ranges) {
+        if (filterObj.queries[range]) {
+          if (filterObj.queries[range].from) {
+            const parsed = parseDate(filterObj.queries[range].from, minoffset, true)
+            filterObj.queries[range].from = parsed ? Math.floor(parsed / 1000) : null
+          }
+          if (filterObj.queries[range].to) {
+            const parsed = parseDate(filterObj.queries[range].to, minoffset, true)
+            filterObj.queries[range].to = parsed ? Math.ceil(parsed / 1000) : null
+          }
+        }
+      }
+
+      // Query users table for user IDs
+      if (filterObj.queries.user || filterObj.queries.exclude.user) {
+        const usernames = []
+        if (filterObj.queries.user) {
+          usernames.push(...filterObj.queries.user)
+        }
+        if (filterObj.queries.exclude.user) {
+          usernames.push(...filterObj.queries.exclude.user)
+        }
+
+        const uploaders = await db.table('users')
+          .whereIn('username', usernames)
+          .select('id', 'username')
+
+        // If no matches, or mismatched results
+        if (!uploaders || (uploaders.length !== usernames.length)) {
+          const notFound = usernames.filter(username => {
+            return !uploaders.find(uploader => uploader.username === username)
+          })
+          if (notFound) {
+            throw new ClientError(`User${notFound.length === 1 ? '' : 's'} not found: ${notFound.join(', ')}.`)
+          }
+        }
+
+        for (const uploader of uploaders) {
+          if (filterObj.queries.user && filterObj.queries.user.includes(uploader.username)) {
+            filterObj.uploaders.push(uploader)
+          } else {
+            filterObj.excludeUploaders.push(uploader)
+          }
+        }
+
+        // Delete keys to avoid unexpected behavior
+        delete filterObj.queries.user
+        delete filterObj.queries.exclude.user
+      }
+
+      // Parse sort keys
+      if (filterObj.queries.sort) {
+        const allowed = [
+          'expirydate',
+          'id',
+          'name',
+          'original',
+          'size',
+          'timestamp'
+        ]
+
+        // Only allow sorting by 'albumid' when not listing album's uploads
+        if (req.params.id === undefined) allowed.push('albumid')
+
+        // Only allow sorting by 'ip' and 'userid' columns when listing all uploads
+        if (all) allowed.push('ip', 'userid')
+
+        for (const obQuery of filterObj.queries.sort) {
+          const tmp = obQuery.toLowerCase().split(':')
+          const column = sortObj.maps[tmp[0]] || tmp[0]
+
+          if (!allowed.includes(column)) {
+            // Alert users if using disallowed/missing columns
+            throw new ClientError(`Column "${column}" cannot be used for sorting.\n\nTry the following instead:\n${allowed.join(', ')}`)
+          }
+
+          sortObj.parsed.push({
+            column,
+            order: (tmp[1] && /^d/.test(tmp[1])) ? 'desc' : 'asc',
+            clause: sortObj.nullsLast.includes(column) ? 'nulls last' : '',
+            cast: sortObj.casts[column] || null
           })
         }
 
-        sortObj.parsed.push({
-          column,
-          order: (tmp[1] && /^d/.test(tmp[1])) ? 'desc' : 'asc',
-          clause: sortObj.nullsLast.includes(column) ? 'nulls last' : '',
-          cast: sortObj.casts[column] || null
-        })
+        // Regular user threshold check
+        if (!ismoderator && sortObj.parsed.length > MAX_SORT_KEYS) {
+          throw new ClientError(`Users are only allowed to use ${MAX_SORT_KEYS} sort key${MAX_SORT_KEYS === 1 ? '' : 's'} at a time.`)
+        }
+
+        // Delete key to avoid unexpected behavior
+        delete filterObj.queries.sort
+      }
+
+      // Parse is keys
+      let isKeys = 0
+      let isLast
+      if (filterObj.queries.is || filterObj.queries.exclude.is) {
+        for (const type of filterObj.typeIs) {
+          const inQuery = filterObj.queries.is && filterObj.queries.is.includes(type)
+          const inExclude = filterObj.queries.exclude.is && filterObj.queries.exclude.is.includes(type)
+
+          // Prioritize exclude keys when both types found
+          if (inQuery || inExclude) {
+            filterObj.flags[`is${type}`] = inExclude ? false : inQuery
+            if (isLast !== undefined && isLast !== filterObj.flags[`is${type}`]) {
+              throw new ClientError('Cannot mix inclusion and exclusion type-is keys.')
+            }
+            isKeys++
+            isLast = filterObj.flags[`is${type}`]
+          }
+        }
+
+        // Delete keys to avoid unexpected behavior
+        delete filterObj.queries.is
+        delete filterObj.queries.exclude.is
       }
 
       // Regular user threshold check
-      if (!ismoderator && sortObj.parsed.length > MAX_SORT_KEYS) {
-        return res.json({
-          success: false,
-          description: `Users are only allowed to use ${MAX_SORT_KEYS} sort key${MAX_SORT_KEYS === 1 ? '' : 's'} at a time.`
-        })
+      if (!ismoderator && isKeys > MAX_IS_KEYS) {
+        throw new ClientError(`Users are only allowed to use ${MAX_IS_KEYS} type-is key${MAX_IS_KEYS === 1 ? '' : 's'} at a time.`)
       }
-
-      // Delete key to avoid unexpected behavior
-      delete filterObj.queries.sort
     }
 
-    // Parse is keys
-    let isKeys = 0
-    let isLast
-    if (filterObj.queries.is || filterObj.queries.exclude.is) {
-      for (const type of filterObj.typeIs) {
-        const inQuery = filterObj.queries.is && filterObj.queries.is.includes(type)
-        const inExclude = filterObj.queries.exclude.is && filterObj.queries.exclude.is.includes(type)
-
-        // Prioritize exclude keys when both types found
-        if (inQuery || inExclude) {
-          filterObj.flags[`is${type}`] = inExclude ? false : inQuery
-          if (isLast !== undefined && isLast !== filterObj.flags[`is${type}`]) {
-            return res.json({
-              success: false,
-              description: 'Cannot mix inclusion and exclusion type-is keys.'
-            })
-          }
-          isKeys++
-          isLast = filterObj.flags[`is${type}`]
-        }
-      }
-
-      // Delete keys to avoid unexpected behavior
-      delete filterObj.queries.is
-      delete filterObj.queries.exclude.is
-    }
-
-    // Regular user threshold check
-    if (!ismoderator && isKeys > MAX_IS_KEYS) {
-      return res.json({
-        success: false,
-        description: `Users are only allowed to use ${MAX_IS_KEYS} type-is key${MAX_IS_KEYS === 1 ? '' : 's'} at a time.`
-      })
-    }
-  }
-
-  function filter () {
-    // If listing all uploads
-    if (all) {
-      this.where(function () {
-        // Filter uploads matching any of the supplied 'user' keys and/or NULL flag
-        // Prioritze exclude keys when both types found
-        this.orWhere(function () {
-          if (filterObj.excludeUploaders.length) {
-            this.whereNotIn('userid', filterObj.excludeUploaders.map(v => v.id))
-          } else if (filterObj.uploaders.length) {
-            this.orWhereIn('userid', filterObj.uploaders.map(v => v.id))
-          }
-          // Such overbearing logic for NULL values, smh...
-          if ((filterObj.excludeUploaders.length && filterObj.flags.userNull !== false) ||
+    function filter () {
+      // If listing all uploads
+      if (all) {
+        this.where(function () {
+          // Filter uploads matching any of the supplied 'user' keys and/or NULL flag
+          // Prioritze exclude keys when both types found
+          this.orWhere(function () {
+            if (filterObj.excludeUploaders.length) {
+              this.whereNotIn('userid', filterObj.excludeUploaders.map(v => v.id))
+            } else if (filterObj.uploaders.length) {
+              this.orWhereIn('userid', filterObj.uploaders.map(v => v.id))
+            }
+            // Such overbearing logic for NULL values, smh...
+            if ((filterObj.excludeUploaders.length && filterObj.flags.userNull !== false) ||
             (filterObj.uploaders.length && filterObj.flags.userNull) ||
             (!filterObj.excludeUploaders.length && !filterObj.uploaders.length && filterObj.flags.userNull)) {
-            this.orWhereNull('userid')
-          } else if (filterObj.flags.userNull === false) {
-            this.whereNotNull('userid')
-          }
-        })
+              this.orWhereNull('userid')
+            } else if (filterObj.flags.userNull === false) {
+              this.whereNotNull('userid')
+            }
+          })
 
-        // Filter uploads matching any of the supplied 'ip' keys and/or NULL flag
-        // Same prioritization logic as above
-        this.orWhere(function () {
-          if (filterObj.queries.exclude.ip) {
-            this.whereNotIn('ip', filterObj.queries.exclude.ip)
-          } else if (filterObj.queries.ip) {
-            this.orWhereIn('ip', filterObj.queries.ip)
-          }
-          // ...
-          if ((filterObj.queries.exclude.ip && filterObj.flags.ipNull !== false) ||
+          // Filter uploads matching any of the supplied 'ip' keys and/or NULL flag
+          // Same prioritization logic as above
+          this.orWhere(function () {
+            if (filterObj.queries.exclude.ip) {
+              this.whereNotIn('ip', filterObj.queries.exclude.ip)
+            } else if (filterObj.queries.ip) {
+              this.orWhereIn('ip', filterObj.queries.ip)
+            }
+            // ...
+            if ((filterObj.queries.exclude.ip && filterObj.flags.ipNull !== false) ||
             (filterObj.queries.ip && filterObj.flags.ipNull) ||
             (!filterObj.queries.exclude.ip && !filterObj.queries.ip && filterObj.flags.ipNull)) {
-            this.orWhereNull('ip')
-          } else if (filterObj.flags.ipNull === false) {
-            this.whereNotNull('ip')
-          }
+              this.orWhereNull('ip')
+            } else if (filterObj.flags.ipNull === false) {
+              this.whereNotNull('ip')
+            }
+          })
         })
-      })
-    } else {
-      // If not listing all uploads, list user's uploads
-      this.where('userid', user.id)
-    }
+      } else {
+        // If not listing all uploads, list user's uploads
+        this.where('userid', user.id)
+      }
 
-    // Then, refine using any of the supplied 'albumid' keys and/or NULL flag
-    // Same prioritization logic as 'userid' and 'ip' above
-    if (req.params.id === undefined) {
-      this.andWhere(function () {
-        if (filterObj.queries.exclude.albumid) {
-          this.whereNotIn('albumid', filterObj.queries.exclude.albumid)
-        } else if (filterObj.queries.albumid) {
-          this.orWhereIn('albumid', filterObj.queries.albumid)
-        }
-        // ...
-        if ((filterObj.queries.exclude.albumid && filterObj.flags.albumidNull !== false) ||
+      // Then, refine using any of the supplied 'albumid' keys and/or NULL flag
+      // Same prioritization logic as 'userid' and 'ip' above
+      if (req.params.id === undefined) {
+        this.andWhere(function () {
+          if (filterObj.queries.exclude.albumid) {
+            this.whereNotIn('albumid', filterObj.queries.exclude.albumid)
+          } else if (filterObj.queries.albumid) {
+            this.orWhereIn('albumid', filterObj.queries.albumid)
+          }
+          // ...
+          if ((filterObj.queries.exclude.albumid && filterObj.flags.albumidNull !== false) ||
           (filterObj.queries.albumid && filterObj.flags.albumidNull) ||
           (!filterObj.queries.exclude.albumid && !filterObj.queries.albumid && filterObj.flags.albumidNull)) {
-          this.orWhereNull('albumid')
-        } else if (filterObj.flags.albumidNull === false) {
-          this.whereNotNull('albumid')
+            this.orWhereNull('albumid')
+          } else if (filterObj.flags.albumidNull === false) {
+            this.whereNotNull('albumid')
+          }
+        })
+      } else if (!all) {
+        // If not listing all uploads, list uploads from user's album
+        this.andWhere('albumid', req.params.id)
+      }
+
+      // Then, refine using the supplied 'date' ranges
+      this.andWhere(function () {
+        if (!filterObj.queries.date || (!filterObj.queries.date.from && !filterObj.queries.date.to)) return
+        if (typeof filterObj.queries.date.from === 'number') {
+          if (typeof filterObj.queries.date.to === 'number') {
+            this.andWhereBetween('timestamp', [filterObj.queries.date.from, filterObj.queries.date.to])
+          } else {
+            this.andWhere('timestamp', '>=', filterObj.queries.date.from)
+          }
+        } else {
+          this.andWhere('timestamp', '<=', filterObj.queries.date.to)
         }
       })
-    } else if (!all) {
-      // If not listing all uploads, list uploads from user's album
-      this.andWhere('albumid', req.params.id)
-    }
 
-    // Then, refine using the supplied 'date' ranges
-    this.andWhere(function () {
-      if (!filterObj.queries.date || (!filterObj.queries.date.from && !filterObj.queries.date.to)) return
-      if (typeof filterObj.queries.date.from === 'number') {
-        if (typeof filterObj.queries.date.to === 'number') {
-          this.andWhereBetween('timestamp', [filterObj.queries.date.from, filterObj.queries.date.to])
+      // Then, refine using the supplied 'expiry' ranges
+      this.andWhere(function () {
+        if (!filterObj.queries.expiry || (!filterObj.queries.expiry.from && !filterObj.queries.expiry.to)) return
+        if (typeof filterObj.queries.expiry.from === 'number') {
+          if (typeof filterObj.queries.expiry.to === 'number') {
+            this.andWhereBetween('expirydate', [filterObj.queries.expiry.from, filterObj.queries.expiry.to])
+          } else {
+            this.andWhere('expirydate', '>=', filterObj.queries.expiry.from)
+          }
         } else {
-          this.andWhere('timestamp', '>=', filterObj.queries.date.from)
+          this.andWhere('expirydate', '<=', filterObj.queries.expiry.to)
         }
-      } else {
-        this.andWhere('timestamp', '<=', filterObj.queries.date.to)
-      }
-    })
+      })
 
-    // Then, refine using the supplied 'expiry' ranges
-    this.andWhere(function () {
-      if (!filterObj.queries.expiry || (!filterObj.queries.expiry.from && !filterObj.queries.expiry.to)) return
-      if (typeof filterObj.queries.expiry.from === 'number') {
-        if (typeof filterObj.queries.expiry.to === 'number') {
-          this.andWhereBetween('expirydate', [filterObj.queries.expiry.from, filterObj.queries.expiry.to])
-        } else {
-          this.andWhere('expirydate', '>=', filterObj.queries.expiry.from)
-        }
-      } else {
-        this.andWhere('expirydate', '<=', filterObj.queries.expiry.to)
-      }
-    })
+      // Then, refine using type-is flags
+      this.andWhere(function () {
+        for (const type of filterObj.typeIs) {
+          let func
+          let operator
+          if (filterObj.flags[`is${type}`] === true) {
+            func = 'orWhere'
+            operator = 'like'
+          } else if (filterObj.flags[`is${type}`] === false) {
+            func = 'andWhere'
+            operator = 'not like'
+          }
 
-    // Then, refine using type-is flags
-    this.andWhere(function () {
-      for (const type of filterObj.typeIs) {
-        let func
-        let operator
-        if (filterObj.flags[`is${type}`] === true) {
-          func = 'orWhere'
-          operator = 'like'
-        } else if (filterObj.flags[`is${type}`] === false) {
-          func = 'andWhere'
-          operator = 'not like'
-        }
-
-        if (func) {
-          for (const pattern of utils[`${type}Exts`].map(ext => `%${ext}`)) {
-            this[func]('name', operator, pattern)
+          if (func) {
+            for (const pattern of utils[`${type}Exts`].map(ext => `%${ext}`)) {
+              this[func]('name', operator, pattern)
+            }
           }
         }
-      }
-    })
+      })
 
-    // Then, refine using the supplied keywords against their file names
-    this.andWhere(function () {
-      if (!filterObj.queries.text) return
-      for (const pattern of filterObj.queries.text) {
-        this.orWhereRaw('?? like ? escape ?', ['name', pattern, '\\'])
-        this.orWhereRaw('?? like ? escape ?', ['original', pattern, '\\'])
-      }
-    })
+      // Then, refine using the supplied keywords against their file names
+      this.andWhere(function () {
+        if (!filterObj.queries.text) return
+        for (const pattern of filterObj.queries.text) {
+          this.orWhereRaw('?? like ? escape ?', ['name', pattern, '\\'])
+          this.orWhereRaw('?? like ? escape ?', ['original', pattern, '\\'])
+        }
+      })
 
-    // Finally, refine using the supplied exclusions against their file names
-    this.andWhere(function () {
-      if (!filterObj.queries.exclude.text) return
-      for (const pattern of filterObj.queries.exclude.text) {
-        this.andWhereRaw('?? not like ? escape ?', ['name', pattern, '\\'])
-        this.andWhereRaw('?? not like ? escape ?', ['original', pattern, '\\'])
-      }
-    })
-  }
+      // Finally, refine using the supplied exclusions against their file names
+      this.andWhere(function () {
+        if (!filterObj.queries.exclude.text) return
+        for (const pattern of filterObj.queries.exclude.text) {
+          this.andWhereRaw('?? not like ? escape ?', ['name', pattern, '\\'])
+          this.andWhereRaw('?? not like ? escape ?', ['original', pattern, '\\'])
+        }
+      })
+    }
 
-  try {
     // Query uploads count for pagination
     const count = await db.table('files')
       .where(filter)
@@ -1470,10 +1435,9 @@ self.list = async (req, res) => {
       users[user.id] = user.username
     }
 
-    return res.json({ success: true, files, count, users, albums, basedomain })
+    await res.json({ success: true, files, count, users, albums, basedomain })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 

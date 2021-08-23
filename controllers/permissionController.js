@@ -1,18 +1,18 @@
 const self = {}
 
-self.permissions = {
+self.permissions = Object.freeze({
   user: 0, // Upload & delete own files, create & delete albums
   moderator: 50, // Delete other user's files
   admin: 80, // Manage users (disable accounts) & create moderators
   superadmin: 100 // Create admins
   // Groups will inherit permissions from groups which have lower value
-}
+})
 
 // returns true if user is in the group OR higher
 self.is = (user, group) => {
   // root bypass
   if (user.username === 'root') return true
-
+  if (typeof group !== 'string' || !group) return false
   const permission = user.permission || 0
   return permission >= self.permissions[group]
 }

@@ -20,7 +20,6 @@ body {
   a {
     color: $link;
     border: 1px solid transparent;
-    margin-top: -1px;
 
     &.is-active {
       color: $white;
@@ -52,6 +51,16 @@ body {
       right: calc(0% + (1em / 2));
       top: calc(50% - (1em / 2));
       position: absolute !important
+    }
+
+    &.is-active[data-action="collapse"] {
+      color: $link !important;
+      background: none !important;
+      border-color: transparent !important;
+
+      &:hover {
+        border-color: $link !important
+      }
     }
   }
 
@@ -144,10 +153,19 @@ li[data-action="page-ellipsis"] {
   color: $grey-lightest
 }
 
-.table .originalname {
-  max-width: 200px;
-  text-overflow: ellipsis;
-  overflow: hidden
+.table {
+  .originalname {
+    max-width: 200px;
+    text-overflow: ellipsis;
+    overflow: hidden
+  }
+
+  th,
+  td {
+    &[title] {
+      cursor: help
+    }
+  }
 }
 
 /** Thumbs extension **/

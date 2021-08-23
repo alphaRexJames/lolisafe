@@ -93,6 +93,7 @@
 .icon-docs::before { content: '\f0c5' } /* '' */
 .icon-exchange:before { content: '\f0ec'; } /* '' */
 .icon-doc-inv::before { content: '\f15b' } /* '' */
+.icon-audio:before { content: '\f1c7'; } /* '' */
 .icon-paper-plane::before { content: '\f1d8' } /* '' */
 .icon-chrome::before { content: '\f268' } /* '' */
 .icon-firefox::before { content: '\f269' } /* '' */

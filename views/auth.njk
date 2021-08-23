@@ -14,8 +14,10 @@
 
 {% block scripts %}
 {{ super() }}
+<!-- Libs scripts -->
 <script src="libs/sweetalert/sweetalert.min.js{{ versions[3] }}"></script>
 <script src="libs/axios/axios.min.js{{ versions[3] }}"></script>
+<!-- Scripts -->
 <script src="js/auth.js{{ versions[1] }}"></script>
 {% endblock %}
 

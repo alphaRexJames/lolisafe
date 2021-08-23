@@ -2,6 +2,7 @@ const { exec } = require('child_process')
 const gulp = require('gulp')
 const cssnano = require('cssnano')
 const del = require('del')
+const Fiber = require('fibers')
 const buble = require('gulp-buble')
 const eslint = require('gulp-eslint7')
 const gulpif = require('gulp-if')
@@ -9,8 +10,8 @@ const nodemon = require('gulp-nodemon')
 const postcss = require('gulp-postcss')
 const postcssPresetEnv = require('postcss-preset-env')
 const replace = require('gulp-replace')
-const sass = require('gulp-sass')
-const sassCompiler = require('node-sass')
+const sass = require('gulp-dart-sass')
+const sassCompiler = require('sass')
 const sourcemaps = require('gulp-sourcemaps')
 const stylelint = require('gulp-stylelint')
 const terser = require('gulp-terser')
@@ -39,7 +40,7 @@ gulp.task('lint:sass', () => {
   return gulp.src('./src/**/*.scss')
     .pipe(stylelint({
       failAfterError: true,
-      reporters: [{ formatter: 'verbose', console: true }]
+      reporters: [{ formatter: 'string', console: true }]
     }))
 })
 
@@ -49,13 +50,18 @@ gulp.task('lint:css', () => {
   })
     .pipe(stylelint({
       failAfterError: true,
-      reporters: [{ formatter: 'verbose', console: true }]
+      reporters: [{ formatter: 'string', console: true }]
     }))
 })
 
 gulp.task('lint:js', () => {
-  return gulp.src('./src/**/*.js', {
-    ignore: './src/libs/**/*'
+  return gulp.src([
+    './*.js',
+    './{controllers,database,routes,scripts,src}/**/*.js'
+  ], {
+    ignore: [
+      './src/libs/**/*'
+    ]
   })
     .pipe(eslint())
     .pipe(eslint.format('stylish'))
@@ -100,7 +106,7 @@ gulp.task('build:sass', function () {
     ignore: '_*.scss'
   })
     .pipe(sourcemaps.init())
-    .pipe(sass().on('error', sass.logError))
+    .pipe(sass({ fiber: Fiber }).on('error', sass.logError))
     .pipe(postcss(postcssPlugins))
     .pipe(sourcemaps.write('.'))
     .pipe(gulp.dest(dist))

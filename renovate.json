@@ -2,5 +2,7 @@
   "extends": [
     "config:base"
   ],
-  "rangeStrategy": "bump"
+  "rangeStrategy": "bump",
+  "timezone": "Asia/Jakarta",
+  "schedule": "before 5am on saturday"
 }

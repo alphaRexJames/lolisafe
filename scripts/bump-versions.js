@@ -34,17 +34,19 @@ const self = {
     const lower = arg.toLowerCase()
     if (lower === 'a') {
       self.types = {}
-      for (let i = min; i <= max; i++)
+      for (let i = min; i <= max; i++) {
         self.types[i] = ''
+      }
       break
     }
     const parsed = parseInt(lower)
     // Only accept 1 to 4
-    if (!isNaN(parsed) && parsed >= min && parsed <= max)
+    if (!isNaN(parsed) && parsed >= min && parsed <= max) {
       self.types[parsed] = ''
+    }
   }
 
-  if (args.includes('--help') || args.includes('-h') || !Object.keys(self.types).length)
+  if (args.includes('--help') || args.includes('-h') || !Object.keys(self.types).length) {
     return console.log(self.stripIndents(`
       Bump version strings for client-side assets.
 
@@ -59,7 +61,8 @@ const self = {
       4: Renders from /public/render/* directories (to be used with /src/js/misc/render.js).
       5: Fontello font files.
       a: Shortcut to update all types.
-    `))
+    `).trim())
+  }
 
   const file = path.resolve('./src/versions.json')
 
@@ -67,11 +70,12 @@ const self = {
   try {
     await self.access(file)
   } catch (error) {
-    if (error.code === 'ENOENT')
+    if (error.code === 'ENOENT') {
       await self.writeFile(file, '{}')
-    else
+    } else {
       // Re-throw error
       throw error
+    }
   }
 
   // Read & parse existing versions
@@ -81,8 +85,9 @@ const self = {
   // We use current timestamp cause it will always increase
   const types = Object.keys(self.types)
   const bumped = String(Math.floor(Date.now() / 1000)) // 1s precision
-  for (const type of types)
+  for (const type of types) {
     self.types[type] = bumped
+  }
 
   // Overwrite existing versions with new versions
   const data = Object.assign(old, self.types)

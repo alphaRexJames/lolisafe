@@ -94,16 +94,15 @@ To generate thumbnails for those files, you can use `yarn thumbs`.
 ```none
 $ yarn thumbs
 $ node ./scripts/thumbs.js
-
 Generate thumbnails.
 
-Usage  :
+Usage:
 node scripts/thumbs.js <mode=1|2|3> [force=0|1] [verbose=0|1] [cfcache=0|1]
 
-mode   : 1 = images only, 2 = videos only, 3 = both images and videos
-force  : 0 = no force (default), 1 = overwrite existing thumbnails
-verbose: 0 = only print missing thumbs (default), 1 = print all
-cfcache: 0 = do not clear cloudflare cache (default), 1 = clear cloudflare cache
+mode    : 1 = images only, 2 = videos only, 3 = both images and videos
+force   : 0 = no force (default), 1 = overwrite existing thumbnails
+verbose : 0 = only print missing thumbs (default), 1 = print all, 2 = print nothing
+cfcache : 0 = do not clear cloudflare cache (default), 1 = clear cloudflare cache
 ```
 
 For example, if you only want to generate thumbnails for image files without overwriting existing ones, you can run `yarn thumbs 1`, or if you want to generate thumbnails for both image and video files, while also overwriting existsing ones, you can run `yarn thumbs 3 1`.
@@ -112,12 +111,12 @@ You will also need to use this script to overwrite existing thumbnails if you wa
 
 ## ClamAV support
 
-This fork has an optional virus scanning support using [ClamAV](https://www.clamav.net/), through [clamdjs](https://github.com/NingLin-P/clamdjs) library.
+This fork has an optional virus scanning support using [ClamAV](https://www.clamav.net/), utilizing [clamscan](https://github.com/kylefarris/clamscan) library (Linux and OS X only).
 
 It will scan new files right after they are uploaded. It will then alert the uploaders of the virus names in ClamAV's database if their files are dirty.
 
-Unfortunately, this will slow down uploads processing as it has to wait for scan results before responding the uploaders, however it's still highly recommended for public usage (or at least if you find Google Safe Search too annoying).
+Unfortunately, this will slow down uploads processing as it has to wait for the scans before responding the uploaders. However, it's still highly recommended for public usage, or if you're like me who find the constant buzzing from Google Safe Search too annoying.
 
-To enable this, make sure you have ClamAV daemon running, then fill in the daemon's IP and port into your config file.
+To enable this, make sure you have [ClamAV installed](https://github.com/kylefarris/clamscan#to-use-local-binary-method-of-scanning), or additionally have [ClamAV daemon running](https://github.com/kylefarris/clamscan#to-use-clamav-using-tcp-sockets). Afterwards configure `uploads.scan` options, and more importantly its sub-option `clamOptions`. Read more about it in the `config.sample.js` file.
 
-From the config file you can also choose to exclude certain extensions from being scanned to lessen the burden on your server.
+Additionally, you can also configure usergroups bypass, extensions whitelist, and max file size, to lessen the burden on your server.

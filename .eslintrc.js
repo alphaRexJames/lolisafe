@@ -10,11 +10,9 @@ module.exports = {
     'standard'
   ],
   rules: {
-    'no-throw-literal': 0,
     'object-shorthand': [
       'error',
       'always'
-    ],
-    'node/no-callback-literal': 0
+    ]
   }
 }

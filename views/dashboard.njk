@@ -6,6 +6,7 @@
 {% block stylesheets %}
 <!-- Libs stylesheets -->
 <link rel="stylesheet" href="libs/fontello/fontello.css{{ versions[1] }}">
+<link rel="stylesheet" href="libs/bulma-collapsible/bulma-collapsible.min.css{{ versions[3] }}">
 {{ super() }}
 <link rel="stylesheet" href="css/sweetalert.css{{ versions[1] }}">
 <link rel="stylesheet" href="css/thumbs.css{{ versions[1] }}">
@@ -14,12 +15,15 @@
 
 {% block scripts %}
 {{ super() }}
+<!-- Libs scripts -->
 <script src="libs/sweetalert/sweetalert.min.js{{ versions[3] }}"></script>
 <script src="libs/axios/axios.min.js{{ versions[3] }}"></script>
 <script src="libs/clipboard.js/clipboard.min.js{{ versions[3] }}"></script>
 <script src="libs/lazyload/lazyload.min.js{{ versions[3] }}"></script>
 {# Polyfill smooth scroll for older browsers #}
 <script src="libs/smoothscroll/smoothscroll.min.js{{ versions[3] }}"></script>
+<script src="libs/bulma-collapsible/bulma-collapsible.min.js{{ versions[3] }}"></script>
+<!-- Scripts -->
 {# We assign an ID for this so that the script can find out its own version #}
 <script id="mainScript" src="js/dashboard.js{{ versions[1] }}"></script>
 <script src="js/misc/utils.js{{ versions[1] }}"></script>
@@ -62,7 +66,10 @@
               <a id="itemManageYourAlbums" class="is-relative">Manage your albums</a>
             </li>
             <li>
-              <ul id="albumsContainer"></ul>
+              <a id="albumsSidebarCollapse" href="#albumsSidebar" data-action="collapse" data-text-collapse="Collapse albums sidebar" data-text-expand="Expand albums sidebar" disabled>Fetching albums sidebar…</a>
+            </li>
+            <li>
+              <ul id="albumsSidebar" class="is-collapsible"></ul>
             </li>
           </ul>
           <p id="itemLabelAdmin" class="menu-label is-hidden">Administration</p>

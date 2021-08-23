@@ -4,9 +4,8 @@
 
 /** Bulma: Utilities **/
 
-@import "../../node_modules/bulma/sass/utilities/animations.sass";
-@import "../../node_modules/bulma/sass/utilities/mixins.sass";
 @import "../../node_modules/bulma/sass/utilities/controls.sass";
+@import "../../node_modules/bulma/sass/utilities/extends.sass";
 
 /** Bulma: Base **/
 
@@ -259,11 +258,7 @@ fieldset[disabled] .select select:hover {
   th {
     color: $white-ter;
     height: 2.25em;
-    font-weight: normal;
-
-    &.capitalize {
-      text-transform: capitalize
-    }
+    font-weight: normal
   }
 
   thead {
@@ -293,6 +288,12 @@ fieldset[disabled] .select select:hover {
   &::after {
     background-color: $text
   }
+}
+
+/** Fontello overrides **/
+
+.icon-gauge::before {
+  margin-top: -2px
 }
 
 /** Cookie Consent **/

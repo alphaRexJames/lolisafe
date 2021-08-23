@@ -1,8 +1,10 @@
 const randomstring = require('randomstring')
 const perms = require('./permissionController')
 const utils = require('./utilsController')
+const apiErrorsHandler = require('./handlers/apiErrorsHandler')
+const ClientError = require('./utils/ClientError')
+const ServerError = require('./utils/ServerError')
 const config = require('./../config')
-const logger = require('./../logger')
 const db = require('knex')(config.database)
 
 const self = {
@@ -35,52 +37,54 @@ self.generateUniqueToken = async () => {
 }
 
 self.verify = async (req, res, next) => {
-  const token = typeof req.body.token === 'string'
-    ? req.body.token.trim()
-    : ''
-
-  if (!token) return res.json({ success: false, description: 'No token provided.' })
-
   try {
+    const token = typeof req.body.token === 'string'
+      ? req.body.token.trim()
+      : ''
+
+    if (!token) throw new ClientError('No token provided.', { statusCode: 403 })
+
     const user = await db.table('users')
       .where('token', token)
       .select('username', 'permission')
       .first()
 
-    if (!user) return res.json({ success: false, description: 'Invalid token.' })
+    if (!user) throw new ClientError('Invalid token.', { statusCode: 403 })
 
     const obj = {
       success: true,
       username: user.username,
       permissions: perms.mapPermissions(user)
     }
-    if (utils.clientVersion) obj.version = utils.clientVersion
-    return res.json(obj)
+
+    if (utils.clientVersion) {
+      obj.version = utils.clientVersion
+    }
+
+    await res.json(obj)
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 
 self.list = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-  return res.json({ success: true, token: user.token })
+  try {
+    const user = await utils.authorize(req)
+    await res.json({ success: true, token: user.token })
+  } catch (error) {
+    return apiErrorsHandler(error, req, res, next)
+  }
 }
 
 self.change = async (req, res, next) => {
-  const user = await utils.authorize(req, res)
-  if (!user) return
-
-  const newToken = await self.generateUniqueToken()
-  if (!newToken) {
-    return res.json({
-      success: false,
-      description: 'Sorry, we could not allocate a unique token. Try again?'
-    })
-  }
-
   try {
+    const user = await utils.authorize(req)
+
+    const newToken = await self.generateUniqueToken()
+    if (!newToken) {
+      throw new ServerError('Failed to allocate a unique token. Try again?')
+    }
+
     await db.table('users')
       .where('token', user.token)
       .update({
@@ -89,13 +93,9 @@ self.change = async (req, res, next) => {
       })
     self.onHold.delete(newToken)
 
-    return res.json({
-      success: true,
-      token: newToken
-    })
+    await res.json({ success: true, token: newToken })
   } catch (error) {
-    logger.error(error)
-    return res.status(500).json({ success: false, description: 'An unexpected error occurred. Try again?' })
+    return apiErrorsHandler(error, req, res, next)
   }
 }
 

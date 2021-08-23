@@ -12,13 +12,13 @@ on:
 
 jobs:
   build:
-    name: Build client assets and bump v1 version string
+    name: Rebuild client assets and bump v1 version string
     runs-on: ubuntu-18.04
     steps:
       - uses: actions/checkout@v2
 
       - name: Use Node.js
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v2
         with:
           node-version: '12.x'
 
@@ -42,7 +42,7 @@ jobs:
 
       - uses: stefanzweifel/git-auto-commit-action@v4
         with:
-          commit_message: 'AUTO: Rebuilt client assets and bumped v1 version string'
+          commit_message: 'dist: rebuilt client assets and bumped v1 version string'
           commit_user_name: loli-bot
           commit_user_email: hi@fiery.me
         env:

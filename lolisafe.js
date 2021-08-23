@@ -1,5 +1,5 @@
 const bodyParser = require('body-parser')
-const clamd = require('clamdjs')
+const ClamScan = require('clamscan')
 const contentDisposition = require('content-disposition')
 const express = require('express')
 const helmet = require('helmet')
@@ -28,6 +28,7 @@ const utils = require('./controllers/utilsController')
 const album = require('./routes/album')
 const api = require('./routes/api')
 const nojs = require('./routes/nojs')
+const player = require('./routes/player')
 
 const db = require('knex')(config.database)
 
@@ -69,6 +70,22 @@ safe.use(bodyParser.json())
 const cdnPages = [...config.pages]
 let setHeaders = res => {
   res.set('Access-Control-Allow-Origin', '*')
+}
+
+const contentTypes = config.overrideContentTypes && Object.keys(config.overrideContentTypes)
+const overrideContentTypes = (res, path) => {
+  // Do only if accessing files from uploads' root directory (i.e. not thumbs, etc.)
+  const relpath = path.replace(paths.uploads, '')
+  if (relpath.indexOf('/', 1) === -1) {
+    const name = relpath.substring(1)
+    const extname = utils.extname(name).substring(1)
+    for (const contentType of contentTypes) {
+      if (config.overrideContentTypes[contentType].includes(extname)) {
+        res.set('Content-Type', contentType)
+        break
+      }
+    }
+  }
 }
 
 const initServeStaticUploads = (opts = {}) => {
@@ -132,8 +149,12 @@ if (config.cacheControl) {
   // If serving uploads with node
   if (config.serveFilesWithNode) {
     initServeStaticUploads({
-      setHeaders: res => {
+      setHeaders: (res, path) => {
         res.set('Access-Control-Allow-Origin', '*')
+        // Override Content-Type if necessary
+        if (contentTypes && contentTypes.length) {
+          overrideContentTypes(res, path)
+        }
         // If using CDN, cache uploads in CDN as well
         // Use with cloudflare.purgeCache enabled in config file
         if (config.cacheControl !== 2) {
@@ -163,7 +184,15 @@ if (config.cacheControl) {
     next()
   })
 } else if (config.serveFilesWithNode) {
-  initServeStaticUploads()
+  initServeStaticUploads({
+    setHeaders: (res, path) => {
+      res.set('Access-Control-Allow-Origin', '*')
+      // Override Content-Type if necessary
+      if (contentTypes && contentTypes.length) {
+        overrideContentTypes(res, path)
+      }
+    }
+  })
 }
 
 // Static assets
@@ -172,6 +201,7 @@ safe.use('/', express.static(paths.dist, { setHeaders }))
 
 safe.use('/', album)
 safe.use('/', nojs)
+safe.use('/', player)
 safe.use('/api', api)
 
 ;(async () => {
@@ -224,14 +254,18 @@ safe.use('/api', api)
 
     // Error pages
     safe.use((req, res, next) => {
-      res.setHeader('Cache-Control', 'no-store')
-      res.status(404).sendFile(path.join(paths.errorRoot, config.errorPages[404]))
+      if (!res.headersSent) {
+        res.setHeader('Cache-Control', 'no-store')
+        res.status(404).sendFile(path.join(paths.errorRoot, config.errorPages[404]))
+      }
     })
 
     safe.use((error, req, res, next) => {
       logger.error(error)
-      res.setHeader('Cache-Control', 'no-store')
-      res.status(500).sendFile(path.join(paths.errorRoot, config.errorPages[500]))
+      if (!res.headersSent) {
+        res.setHeader('Cache-Control', 'no-store')
+        res.status(500).sendFile(path.join(paths.errorRoot, config.errorPages[500]))
+      }
     })
 
     // Git hash
@@ -245,16 +279,15 @@ safe.use('/api', api)
       logger.log(`Git commit: ${utils.gitHash}`)
     }
 
-    // Clamd scanner
+    // ClamAV scanner
     if (config.uploads.scan && config.uploads.scan.enabled) {
-      const { ip, port } = config.uploads.scan
-      const version = await clamd.version(ip, port)
-      logger.log(`${ip}:${port} ${version}`)
-
-      utils.clamd.scanner = clamd.createScanner(ip, port)
-      if (!utils.clamd.scanner) {
-        throw 'Could not create clamd scanner'
+      if (!config.uploads.scan.clamOptions) {
+        logger.error('Missing object config.uploads.scan.clamOptions (check config.sample.js)')
+        process.exit(1)
       }
+      utils.clamscan.instance = await new ClamScan().init(config.uploads.scan.clamOptions)
+      utils.clamscan.version = await utils.clamscan.instance.get_version().then(s => s.trim())
+      logger.log(`Connection established with ${utils.clamscan.version}`)
     }
 
     // Cache file identifiers

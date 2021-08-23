@@ -55,8 +55,8 @@ const page = {
 
   // Include BMP for uploads preview only, cause the real images will be used
   // Sharp isn't capable of making their thumbnails for dashboard and album public pages
-  imageExts: ['.webp', '.jpg', '.jpeg', '.bmp', '.gif', '.png', '.tiff', '.tif', '.svg'],
-  videoExts: ['.webm', '.mp4', '.wmv', '.avi', '.mov', '.mkv', '.m4v', '.m2ts'],
+  imageExts: ['.gif', '.jpeg', '.jpg', '.png', '.svg', '.tif', '.tiff', '.webp', '.bmp'],
+  videoExts: ['.avi', '.m2ts', '.m4v', '.mkv', '.mov', '.mp4', '.webm', '.wmv'],
 
   albumTitleMaxLength: 70,
   albumDescMaxLength: 4000
@@ -90,7 +90,10 @@ page.onError = error => {
   console.error(error)
 
   const content = document.createElement('div')
-  content.innerHTML = `<code>${error.toString()}</code>`
+  content.innerHTML = `
+    <p><code>${error.toString()}</code></p>
+    <p>Please check your console for more information.</p>
+  `
   return swal({
     title: 'An error occurred!',
     icon: 'error',
@@ -120,7 +123,7 @@ page.onAxiosError = (error, cont) => {
   if (!cont) {
     const description = error.response.data && error.response.data.description
       ? error.response.data.description
-      : 'There was an error with the request, please check the console for more information.'
+      : 'There was an error with the request.\nPlease check the console for more information.'
     return swal(`${error.response.status} ${statusText}`, description, 'error')
   } else if (error.response.data && error.response.data.description) {
     return error.response
@@ -267,7 +270,11 @@ page.prepareUpload = () => {
     page.urlMaxSize = parseInt(urlMaxSize.innerHTML)
     page.urlMaxSizeBytes = page.urlMaxSize * 1e6
     urlMaxSize.innerHTML = page.getPrettyBytes(page.urlMaxSizeBytes)
-    document.querySelector('#uploadUrls').addEventListener('click', event => {
+  }
+
+  const uploadUrls = document.querySelector('#uploadUrls')
+  if (uploadUrls) {
+    uploadUrls.addEventListener('click', event => {
       page.addUrlsToQueue()
     })
   }
@@ -307,7 +314,12 @@ page.setActiveTab = index => {
 }
 
 page.fetchAlbums = () => {
-  return axios.get('api/albums', { headers: { token: page.token } }).then(response => {
+  return axios.get('api/albums', {
+    headers: {
+      simple: '1',
+      token: page.token
+    }
+  }).then(response => {
     if (response.data.success === false) {
       return swal('An error occurred!', response.data.description, 'error')
     }
@@ -387,7 +399,7 @@ page.prepareDropzone = () => {
         }
 
         // Attach necessary data for initial upload speed calculation
-        if (xhr._uplSpeedCalc === undefined) {
+        if (typeof xhr._uplSpeedCalc === 'undefined') {
           xhr._uplSpeedCalc = {
             lastSent: 0,
             data: [{ timestamp: Date.now(), bytes: 0 }]
@@ -514,16 +526,16 @@ page.prepareDropzone = () => {
         }
 
         // Clean up file size errors
-        if (/^File is too big/.test(err) && /File too large/.test(err)) {
+        if (/^File is too big/.test(err) || /File too large/.test(err)) {
           err = `File too large (${page.getPrettyBytes(file.size)}).`
         }
-
-        page.updateTemplateIcon(file.previewElement, 'icon-block')
 
         file.previewElement.querySelector('.descriptive-progress').classList.add('is-hidden')
 
         file.previewElement.querySelector('.error').innerHTML = err
         file.previewElement.querySelector('.error').classList.remove('is-hidden')
+
+        page.updateTemplateIcon(file.previewElement, 'icon-block')
       })
     },
 
@@ -554,6 +566,8 @@ page.prepareDropzone = () => {
         if (response.data.success === false) {
           file.previewElement.querySelector('.error').innerHTML = response.data.description
           file.previewElement.querySelector('.error').classList.remove('is-hidden')
+
+          page.updateTemplateIcon(file.previewElement, 'icon-block')
         }
 
         if (response.data.files && response.data.files[0]) {
@@ -615,6 +629,8 @@ page.processUrlsQueue = () => {
 
       file.previewElement.querySelector('.error').innerHTML = data.description
       file.previewElement.querySelector('.error').classList.remove('is-hidden')
+
+      page.updateTemplateIcon(file.previewElement, 'icon-block')
     }
 
     if (Array.isArray(data.files) && data.files[0]) {
@@ -672,7 +688,7 @@ page.updateTemplate = (file, response) => {
   link.classList.remove('is-hidden')
   clipboard.parentElement.classList.remove('is-hidden')
 
-  const exec = /.[\w]+(\?|$)/.exec(response.url)
+  const exec = /.[\w]+$/.exec(response.url)
   const extname = exec && exec[0]
     ? exec[0].toLowerCase()
     : null
@@ -931,9 +947,9 @@ page.prepareUploadConfig = () => {
 
     let value
     if (!conf.disabled) {
-      if (conf.value !== undefined) {
+      if (typeof conf.value !== 'undefined') {
         value = conf.value
-      } else if (conf.number !== undefined) {
+      } else if (typeof conf.number !== 'undefined') {
         const parsed = parseInt(localStorage[lsKeys[key]])
         if (!isNaN(parsed) && parsed <= conf.number.max && parsed >= conf.number.min) {
           value = parsed
@@ -953,9 +969,9 @@ page.prepareUploadConfig = () => {
       // otherwise pass value to global page object
       if (typeof conf.valueHandler === 'function') {
         conf.valueHandler(value)
-      } else if (value !== undefined) {
+      } else if (typeof value !== 'undefined') {
         page[key] = value
-      } else if (fallback[key] !== undefined) {
+      } else if (typeof fallback[key] !== 'undefined') {
         page[key] = fallback[key]
       }
     }
@@ -969,7 +985,7 @@ page.prepareUploadConfig = () => {
       for (let j = 0; j < conf.select.length; j++) {
         const opt = conf.select[j]
         const selected = (value && (opt.value === String(value))) ||
-          (value === undefined && opt.value === 'default')
+          (typeof value === 'undefined' && opt.value === 'default')
         opts.push(`
           <option value="${opt.value}"${selected ? ' selected' : ''}>
             ${opt.text}${opt.value === 'default' ? ' (default)' : ''}
@@ -988,10 +1004,10 @@ page.prepareUploadConfig = () => {
       control.className = 'input is-fullwidth'
       control.type = 'number'
 
-      if (conf.number.min !== undefined) control.min = conf.number.min
-      if (conf.number.max !== undefined) control.max = conf.number.max
+      if (typeof conf.number.min !== 'undefined') control.min = conf.number.min
+      if (typeof conf.number.max !== 'undefined') control.max = conf.number.max
       if (typeof value === 'number') control.value = value
-      else if (conf.number.default !== undefined) control.value = conf.number.default
+      else if (typeof conf.number.default !== 'undefined') control.value = conf.number.default
     }
 
     let help
@@ -1004,16 +1020,16 @@ page.prepareUploadConfig = () => {
       help = 'This option is currently not configurable.'
     } else if (typeof conf.help === 'string') {
       help = conf.help
-    } else if (conf.help === true && conf.number !== undefined) {
+    } else if (conf.help === true && typeof conf.number !== 'undefined') {
       const tmp = []
 
-      if (conf.number.default !== undefined) {
+      if (typeof conf.number.default !== 'undefined') {
         tmp.push(`Default is ${conf.number.default}${conf.number.suffix || ''}.`)
       }
-      if (conf.number.min !== undefined) {
+      if (typeof conf.number.min !== 'undefined') {
         tmp.push(`Min is ${conf.number.min}${conf.number.suffix || ''}.`)
       }
-      if (conf.number.max !== undefined) {
+      if (typeof conf.number.max !== 'undefined') {
         tmp.push(`Max is ${conf.number.max}${conf.number.suffix || ''}.`)
       }
 
@@ -1057,18 +1073,18 @@ page.prepareUploadConfig = () => {
       const key = keys[i]
 
       let value
-      if (config[key].select !== undefined) {
+      if (typeof config[key].select !== 'undefined') {
         if (form.elements[key].value !== 'default') {
           value = form.elements[key].value
         }
-      } else if (config[key].number !== undefined) {
+      } else if (typeof config[key].number !== 'undefined') {
         const parsed = parseInt(form.elements[key].value)
         if (!isNaN(parsed) && parsed !== config[key].number.default) {
           value = Math.min(Math.max(parsed, config[key].number.min), config[key].number.max)
         }
       }
 
-      if (value !== undefined) localStorage[lsKeys[key]] = value
+      if (typeof value !== 'undefined') localStorage[lsKeys[key]] = value
       else localStorage.removeItem(lsKeys[key])
     }
 

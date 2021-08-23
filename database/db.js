@@ -1,7 +1,7 @@
 const init = async db => {
   // Create the tables we need to store galleries and files
   await db.schema.hasTable('albums').then(exists => {
-    if (!exists)
+    if (!exists) {
       return db.schema.createTable('albums', function (table) {
         table.increments()
         table.integer('userid')
@@ -15,10 +15,11 @@ const init = async db => {
         table.integer('public')
         table.string('description')
       })
+    }
   })
 
   await db.schema.hasTable('files').then(exists => {
-    if (!exists)
+    if (!exists) {
       return db.schema.createTable('files', function (table) {
         table.increments()
         table.integer('userid')
@@ -32,10 +33,11 @@ const init = async db => {
         table.integer('timestamp')
         table.integer('expirydate')
       })
+    }
   })
 
   await db.schema.hasTable('users').then(exists => {
-    if (!exists)
+    if (!exists) {
       return db.schema.createTable('users', function (table) {
         table.increments()
         table.string('username')
@@ -46,6 +48,7 @@ const init = async db => {
         table.integer('permission')
         table.integer('registration')
       })
+    }
   })
 
   const root = await db.table('users')
