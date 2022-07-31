@@ -2,65 +2,24 @@
 
 const render = {
   lsKey: 'render',
-  type: 'miku', // This is intended to be hard-coded
   configs: {
     al: {
       name: 'ship waifu~',
       root: 'render/al/',
-      array: [
-        'admiral_graf_spee_1.png',
-        'admiral_hipper_1.png',
-        'akagi_1.png',
-        'akashi_1.png',
-        'akashi_2.png',
-        'atago_1.png',
-        'atago_3.png',
-        'atago_4.png',
-        'atago_5.png',
-        'belfast_2.png',
-        'choukai_1.png',
-        'deutschland_1.png',
-        'enterprise_1.png',
-        'glorious_1.png',
-        'hammann_1.png',
-        'hammann_2.png',
-        'hammann_3.png',
-        'hatsuharu_1.png',
-        'kaga_1.png',
-        'kaga_2.png',
-        'kaga_3.png',
-        'laffey_1.png',
-        'laffey_2.png',
-        'laffey_3.png',
-        'prinz_eugen_3.png',
-        'san_diego_1.png',
-        'takao_3.png',
-        'unicorn_1.png',
-        'unicorn_2.png',
-        'unicorn_3.png',
-        'unicorn_4.png',
-        'unicorn_6.png',
-        'unicorn_7.png',
-        'unicorn_8.png',
-        'yamashiro_1.png',
-        'yamashiro_2.png',
-        'yamashiro_3.png',
-        'yukikaze_1.png'
-      ]
+      // 001.png ~ 038.png
+      array: Array.apply(null, { length: 38 }).map((_, i) => `${('00' + (i + 1)).slice(-3)}.png`)
     },
     miku: {
       name: 'miku ❤️~',
       root: 'render/miku/',
-      array: []
+      // 001.png ~ 050.png
+      array: Array.apply(null, { length: 50 }).map((_, i) => `${('00' + (i + 1)).slice(-3)}.png`)
     }
   },
   config: null,
   selected: null,
   done: false
 }
-
-// miku: Generate an array of file names from 001.png to 050.png
-for (let i = 1; i <= 50; i++) render.configs.miku.array.push(`${('00' + i).slice(-3)}.png`)
 
 render.showTogglePrompt = () => {
   const renderEnabled = !(localStorage[render.lsKey] === '0')
@@ -107,6 +66,11 @@ render.showTogglePrompt = () => {
   })
 }
 
+render.parseSelectedConfig = () => {
+  const renderScript = document.querySelector('#renderScript')
+  if (renderScript && renderScript.dataset.config) return renderScript.dataset.config
+}
+
 render.parseVersion = () => {
   const renderScript = document.querySelector('#renderScript')
   if (renderScript && renderScript.dataset.version) return `?v=${renderScript.dataset.version}`
@@ -116,7 +80,7 @@ render.parseVersion = () => {
 render.do = reload => {
   if (!render.done) render.done = true
 
-  render.config = render.configs[render.type]
+  render.config = render.configs[render.parseSelectedConfig()]
   if (!render.config || !render.config.array.length) return
 
   const previousElement = document.querySelector('body > .render')

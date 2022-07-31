@@ -1,8 +1,6 @@
 const path = require('path')
-const paths = require('../controllers/pathsController')
-const utils = require('../controllers/utilsController')
-const config = require('./../config')
-const db = require('knex')(config.database)
+const paths = require('./../controllers/pathsController')
+const utils = require('./../controllers/utilsController')
 
 const self = {
   getFiles: async directory => {
@@ -43,7 +41,7 @@ const self = {
   const uploads = await self.getFiles(paths.uploads)
   console.log(`Uploads: ${uploads.length}`)
 
-  const uploadsDb = await db.table('files')
+  const uploadsDb = await utils.db.table('files')
     .select('name')
     .then(rows => rows.map(row => row.name))
   console.log(`- In DB: ${uploadsDb.length}`)

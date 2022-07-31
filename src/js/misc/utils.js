@@ -2,6 +2,7 @@
 
 // keys for localStorage
 lsKeys.siBytes = 'siBytes'
+lsKeys.ampmTime = 'ampmTime'
 
 page.prepareShareX = () => {
   const sharexElement = document.querySelector('#ShareX')
@@ -22,21 +23,21 @@ page.prepareShareX = () => {
   const originClean = origin.replace(/\//g, '_')
 
   const sharexConfObj = {
+    Version: '13.4.0',
     Name: originClean,
     DestinationType: 'ImageUploader, FileUploader',
     RequestMethod: 'POST',
     RequestURL: `${window.location.protocol}//${origin}/api/upload`,
     Headers: headers,
-    Body: 'MultipartFromData',
+    Body: 'MultipartFormData',
     FileFormName: 'files[]',
     URL: '$json:files[0].url$',
     ThumbnailURL: '$json:files[0].url$'
   }
 
-  /*
-  if (page.token)
+  if (page.token) {
     sharexConfObj.DeletionURL = '$json:files[0].deleteUrl$'
-  */
+  }
 
   const sharexConfStr = JSON.stringify(sharexConfObj, null, 2)
   const sharexBlob = new Blob([sharexConfStr], { type: 'application/octet-binary' })
@@ -46,17 +47,19 @@ page.prepareShareX = () => {
 }
 
 page.getPrettyDate = date => {
+  // Not using .toLocaleString() for date display to maintain a global standard,
+  // but its AM/PM logic is perfect for our use case as long as it's fixed to "en" locale.
   return date.getFullYear() + '/' +
     (date.getMonth() < 9 ? '0' : '') + // month's index starts from zero
     (date.getMonth() + 1) + '/' +
     (date.getDate() < 10 ? '0' : '') +
     date.getDate() + ' ' +
-    (date.getHours() < 10 ? '0' : '') +
-    date.getHours() + ':' +
-    (date.getMinutes() < 10 ? '0' : '') +
-    date.getMinutes() + ':' +
-    (date.getSeconds() < 10 ? '0' : '') +
-    date.getSeconds()
+    date.toLocaleString('en', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: localStorage[lsKeys.ampmTime] === '1'
+    })
 }
 
 page.getPrettyBytes = num => {

@@ -1,5 +1,4 @@
 @charset "utf-8";
-
 @import "_variables";
 
 /** Main **/
@@ -10,5 +9,50 @@
 }
 
 .video-js {
-  margin: 0 auto
+  margin: 0 auto;
+
+  &.vjs-wavesurfer.vjs-fluid {
+    /* stylelint-disable-next-line selector-type-no-unknown */
+    wave.vjs-wavedisplay {
+      height: calc(100% - 30px) !important
+    }
+  }
+
+  .vjs-loop-button,
+  .vjs-seek-button {
+    .vjs-icon-placeholder {
+      /* stylelint-disable-next-line font-family-no-missing-generic-family-keyword */
+      font-family: fontello;
+      font-weight: normal;
+      font-style: normal;
+      cursor: pointer;
+
+      &::before {
+        font-size: 1.5em;
+        line-height: 1.97
+      }
+    }
+  }
+
+  .vjs-loop-button {
+    &:not(.vjs-loop-enabled) {
+      color: $grey
+    }
+
+    .vjs-icon-placeholder::before {
+      content: "\e81f"
+    }
+  }
+
+  .vjs-seek-button {
+    &.skip-back .vjs-icon-placeholder::before {
+      content: "\e81e";
+      transform: none
+    }
+
+    &.skip-forward .vjs-icon-placeholder::before {
+      content: "\e818";
+      transform: none
+    }
+  }
 }

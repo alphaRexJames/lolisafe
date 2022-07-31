@@ -1,4 +1,4 @@
-const utils = require('../controllers/utilsController')
+const utils = require('./../controllers/utilsController')
 
 ;(async () => {
   const location = process.argv[1].replace(process.cwd() + '/', '')
@@ -31,9 +31,13 @@ const utils = require('../controllers/utilsController')
       console.log(expired)
     }
   }
-
   console.log(`Expired files: ${result.expired.length}`)
+
   if (result.failed) {
+    console.log('WARNING: Some expired files failed to delete!')
+    for (const failed of result.failed) {
+      console.log(failed)
+    }
     console.log(`Failed to delete: ${result.failed.length}`)
   }
 })()

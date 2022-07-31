@@ -1,18 +1,20 @@
 @charset "utf-8";
 
+/* stylelint-disable scss/dollar-variable-empty-line-before */
 /* stylelint-disable-next-line value-keyword-case */
-$family-sans-serif: BlinkMacSystemFont, -apple-system, "Segoe UI", "Ubuntu", "Roboto", "Oxygen", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+$family-sans-serif: BlinkMacSystemFont, -apple-system, "Segoe UI", "Ubuntu", "Roboto", "Oxygen", "Cantarell",
+  "Fira Sans", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
 
-$black: hsl(0, 0%, 0%);
-$green: hsl(141, 42%, 53%);
-$cyan: hsl(217, 89%, 61%);
-$blue: hsl(208, 79%, 51%);
-$red: hsl(348, 100%, 61%);
+$black: hsl(0deg 0% 0%);
+$green: hsl(141deg 42% 53%);
+$cyan: hsl(217deg 89% 61%);
+$blue: hsl(208deg 79% 51%);
+$red: hsl(348deg 100% 61%);
 
 /** Bulma: Variables **/
-@import "../../node_modules/bulma/sass/utilities/initial-variables.sass";
-@import "../../node_modules/bulma/sass/utilities/functions.sass";
-@import "../../node_modules/bulma/sass/utilities/derived-variables.sass";
+@import "../../node_modules/bulma/sass/utilities/initial-variables";
+@import "../../node_modules/bulma/sass/utilities/functions";
+@import "../../node_modules/bulma/sass/utilities/derived-variables";
 
 $scheme-main: $black;
 $text: $white-ter;
@@ -50,7 +52,7 @@ $pagination-hover-color: $scheme-main;
 
 $pagination-disabled-background-color: $grey-dark;
 $pagination-disabled-border-color: $grey;
-$pagination-disabled-color: hsl(0, 0%, 64%);
+$pagination-disabled-color: hsl(0deg 0% 64%);
 
 $tabs-link-color: $text;
 $tabs-link-hover-color: $tabs-link-color;

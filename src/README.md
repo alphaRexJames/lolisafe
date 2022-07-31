@@ -1,12 +1,12 @@
 # README
 
-`versions.json` is the file that tells Nunjucks what version strings to append to client-side lolisafe assets.
+`versions.json` is the file that tells Nunjucks what version strings to append to client-side lolisafe assets (only crucial if you use [Cache-Control](#cache-control)).
 
 To bump the version, it's recommended to use use `yarn bump-versions`.
 
 ```none
 $ yarn bump-versions
-$ node ./scripts/bump-versions.j
+$ node ./scripts/bump-versions.js
 Bump version strings for client-side assets.
 
 Usage:
@@ -34,8 +34,6 @@ To bump type 5, you would have to run `yarn bump-versions 5`.
 
 ## Cache-Control
 
-Version strings will NOT be used when `cacheControl` in `config.js` is not enabled.
-
-To begin with, version strings are only necessary when the assets are being cached indefinitely in browsers.
+Version strings will NOT be used when `cacheControl` in `config.js` is not enabled, since they are only necessary when the assets are being cached indefinitely in browsers.
 
 However, type 5 will still be appended to the built `fontello.css` if it exists in `versions.json` file.

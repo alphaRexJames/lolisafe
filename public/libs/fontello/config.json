@@ -253,6 +253,30 @@
       "css": "audio",
       "code": 61895,
       "src": "fontawesome"
+    },
+    {
+      "uid": "85806fd8ab907f45d34f976354a0df23",
+      "css": "fast-backward",
+      "code": 59422,
+      "src": "entypo"
+    },
+    {
+      "uid": "18f7c393e3532e40edd45607c9d99988",
+      "css": "fast-forward",
+      "code": 59416,
+      "src": "entypo"
+    },
+    {
+      "uid": "bb46b15cb78cc4cc05d3d715d522ac4d",
+      "css": "cw",
+      "code": 59423,
+      "src": "entypo"
+    },
+    {
+      "uid": "63b86fedd4ee9ad2105f54f4888e7088",
+      "css": "info",
+      "code": 59421,
+      "src": "entypo"
     }
   ]
 }

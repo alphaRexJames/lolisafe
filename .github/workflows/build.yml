@@ -10,32 +10,34 @@ on:
       - 'src/**/*.scss'
       - 'src/versions.json'
 
+env:
+  NODE_VERSION: 16
+
 jobs:
   build:
     name: Rebuild client assets and bump v1 version string
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Use Node.js
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v3
         with:
-          node-version: '12.x'
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Get yarn cache directory path
-        id: yarn-cache-dir-path
-        run: echo "::set-output name=dir::$(yarn cache dir)"
-
-      - uses: actions/cache@v2
-        id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        id: cache-nodemodules
         with:
-          path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-
+          path: node_modules
+          key: ${{ runner.os }}-${{ env.NODE_VERSION }}-nodemodules-${{ hashFiles('**/yarn.lock') }}
 
       - name: Install dependencies
-        run: yarn install
+        if: steps.cache-nodemodules.outputs.cache-hit != 'true'
+        run: yarn install --frozen-lockfile --non-interactive
+
+      - name: Update browserslist/caniuse-lite
+        run: npx browserslist@latest --update-db
 
       - name: yarn build
         run: yarn build

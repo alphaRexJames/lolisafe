@@ -45,7 +45,12 @@ self.error = (content, options = {}) => {
   write(content, options)
 }
 
-self.debug = (...args) => {
+self.debug = (content, options = {}) => {
+  if (process.env.NODE_ENV !== 'development') return
+  write(content, options)
+}
+
+self.inspect = (...args) => {
   const options = {
     colors: true,
     depth: Infinity

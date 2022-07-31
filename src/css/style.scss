@@ -1,56 +1,55 @@
 @charset "utf-8";
-
 @import "_variables";
 
 /** Bulma: Utilities **/
 
-@import "../../node_modules/bulma/sass/utilities/controls.sass";
-@import "../../node_modules/bulma/sass/utilities/extends.sass";
+@import "../../node_modules/bulma/sass/utilities/controls";
+@import "../../node_modules/bulma/sass/utilities/extends";
 
 /** Bulma: Base **/
 
-@import "../../node_modules/bulma/sass/base/_all.sass";
+@import "../../node_modules/bulma/sass/base/_all";
 
 /** Bulma: Elements **/
 
-@import "../../node_modules/bulma/sass/elements/button.sass";
-@import "../../node_modules/bulma/sass/elements/container.sass";
-@import "../../node_modules/bulma/sass/elements/content.sass";
-@import "../../node_modules/bulma/sass/elements/icon.sass";
-@import "../../node_modules/bulma/sass/elements/notification.sass";
-@import "../../node_modules/bulma/sass/elements/progress.sass";
-@import "../../node_modules/bulma/sass/elements/table.sass";
-@import "../../node_modules/bulma/sass/elements/title.sass";
-@import "../../node_modules/bulma/sass/elements/other.sass";
+@import "../../node_modules/bulma/sass/elements/button";
+@import "../../node_modules/bulma/sass/elements/container";
+@import "../../node_modules/bulma/sass/elements/content";
+@import "../../node_modules/bulma/sass/elements/icon";
+@import "../../node_modules/bulma/sass/elements/notification";
+@import "../../node_modules/bulma/sass/elements/progress";
+@import "../../node_modules/bulma/sass/elements/table";
+@import "../../node_modules/bulma/sass/elements/title";
+@import "../../node_modules/bulma/sass/elements/other";
 
 /** Bulma: Form **/
 
-@import "../../node_modules/bulma/sass/form/_all.sass";
+@import "../../node_modules/bulma/sass/form/_all";
 
 /** Bulma: Componenets **/
 
-@import "../../node_modules/bulma/sass/components/level.sass";
-@import "../../node_modules/bulma/sass/components/menu.sass";
-@import "../../node_modules/bulma/sass/components/message.sass";
-@import "../../node_modules/bulma/sass/components/pagination.sass";
-@import "../../node_modules/bulma/sass/components/tabs.sass";
+@import "../../node_modules/bulma/sass/components/level";
+@import "../../node_modules/bulma/sass/components/menu";
+@import "../../node_modules/bulma/sass/components/message";
+@import "../../node_modules/bulma/sass/components/pagination";
+@import "../../node_modules/bulma/sass/components/tabs";
 
 /** Bulma: Grid **/
 
-@import "../../node_modules/bulma/sass/grid/_all.sass";
+@import "../../node_modules/bulma/sass/grid/_all";
 
 /** Bulma: Helpers **/
 
-@import "../../node_modules/bulma/sass/helpers/_all.sass";
+@import "../../node_modules/bulma/sass/helpers/_all";
 
 /** Bulma: Layout **/
 
-@import "../../node_modules/bulma/sass/layout/hero.sass";
-@import "../../node_modules/bulma/sass/layout/section.sass";
+@import "../../node_modules/bulma/sass/layout/hero";
+@import "../../node_modules/bulma/sass/layout/section";
 
 /** Animations **/
 
-@-webkit-keyframes fadeInOpacity {
+@keyframes fade-in-opacity {
   0% {
     opacity: 0
   }
@@ -60,36 +59,7 @@
   }
 }
 
-@keyframes fadeInOpacity {
-  0% {
-    opacity: 0
-  }
-
-  100% {
-    opacity: 1
-  }
-}
-
-@-webkit-keyframes floatUp {
-  0% {
-    opacity: 0;
-    transform: scale(0.86)
-  }
-
-  25% {
-    opacity: 100
-  }
-
-  67% {
-    transform: scale(1)
-  }
-
-  100% {
-    transform: scale(1)
-  }
-}
-
-@keyframes floatUp {
+@keyframes float-up {
   0% {
     opacity: 0;
     transform: scale(0.86)
@@ -115,7 +85,7 @@ html {
 }
 
 body {
-  animation: fadeInOpacity 0.5s
+  animation: fade-in-opacity 0.5s
 }
 
 code,
@@ -125,23 +95,8 @@ code,
   font-size: 1rem
 }
 
-.input::-moz-placeholder,
-.textarea::-moz-placeholder {
-  color: $grey-lightest
-}
-
-.input::-webkit-input-placeholder,
-.textarea::-webkit-input-placeholder {
-  color: $grey-lightest
-}
-
-.input:-moz-placeholder,
-.textarea:-moz-placeholder {
-  color: $grey-lightest
-}
-
-.input:-ms-input-placeholder,
-.textarea:-ms-input-placeholder {
+.input::placeholder,
+.textarea::placeholder {
   color: $grey-lightest
 }
 
@@ -176,20 +131,20 @@ code,
   &.is-dangerish {
     background-color: #ff7043;
     border-color: transparent;
-    color: rgba(0, 0, 0, 0.7);
+    color: rgb(0 0 0 / 70%);
 
     &.is-hovered,
     &:not([disabled]):hover {
       background-color: #ff8a65;
       border-color: transparent;
-      color: rgba(0, 0, 0, 0.7)
+      color: rgb(0 0 0 / 70%)
     }
 
     &.is-active,
     &:not([disabled]):active {
       background-color: #ff5722;
       border-color: transparent;
-      color: rgba(0, 0, 0, 0.7)
+      color: rgb(0 0 0 / 70%)
     }
 
     &.is-outlined {
@@ -203,7 +158,7 @@ code,
       &:not([disabled]):hover {
         background-color: #ff7043;
         border-color: #ff7043;
-        color: rgba(0, 0, 0, 0.7)
+        color: rgb(0 0 0 / 70%)
       }
     }
   }
@@ -214,11 +169,11 @@ code,
   color: $grey-light
 }
 
-.select:not(.is-multiple):not(.is-loading)::after {
+.select:not(.is-multiple,.is-loading)::after {
   border-color: $white-ter
 }
 
-.select:not(.is-multiple):not(.is-loading):hover::after {
+.select:not(.is-multiple,.is-loading):hover::after {
   border-color: $white-ter
 }
 
@@ -288,6 +243,10 @@ fieldset[disabled] .select select:hover {
   &::after {
     background-color: $text
   }
+}
+
+.has-word-break-all {
+  word-break: break-all
 }
 
 /** Fontello overrides **/

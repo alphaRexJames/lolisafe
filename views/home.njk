@@ -32,9 +32,13 @@
 <script src="libs/cookieconsent/cookieconsent.min.js{{ versions[3] }}"></script>
 {%- endif %}
 <!-- Scripts -->
+{% if globals.enable_home_renders -%}
 {# We assign an ID for this so that the script can find out version string for render images #}
-{#<script id="renderScript" data-version="{{ versions[4] }}" src="js/misc/render.js{{ versions[1] }}" async></script>#}
-{#<script src="js/misc/newsfeed.js{{ versions[1] }}" async></script>#}
+<script id="renderScript" data-config="{{ globals.enable_home_renders }}" data-version="{{ versions[4] }}" src="js/misc/render.js{{ versions[1] }}" async></script>
+{%- endif %}
+{% if globals.enable_home_newsfeed -%}
+<script src="js/misc/newsfeed.js{{ versions[1] }}" async></script>
+{%- endif %}
 {# We assign an ID for this so that the script can find out its own version #}
 <script id="mainScript" src="js/home.js{{ versions[1] }}"></script>
 <script src="js/misc/utils.js{{ versions[1] }}"></script>
@@ -180,11 +184,11 @@
 
       {% include "_partial/links.njk" %}
 
-      {% if gitHash -%}
+      {% if utils.gitHash -%}
       <div class="git-commit columns is-gapless">
         <div class="column is-hidden-mobile"></div>
         <div class="column">
-          <span>Git commit: </span><a href="https://github.com/BobbyWibowo/lolisafe/commit/{{ gitHash }}" target="_blank" rel="noopener">{{ gitHash }}</a>
+          <span>Git commit: </span><a href="https://github.com/BobbyWibowo/lolisafe/commit/{{ utils.gitHash }}" target="_blank" rel="noopener">{{ utils.gitHash }}</a>
         </div>
         <div class="column is-hidden-mobile"></div>
       </div>

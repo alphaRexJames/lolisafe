@@ -1,0 +1,19 @@
+version: "3.7"
+
+services:
+    nginx:
+        volumes:
+            - lolisafe-data:/usr/lolisafe/uploads
+
+    lolisafe:
+        volumes:
+            - lolisafe-data:/usr/lolisafe/uploads
+            - lolisafe-database:/usr/lolisafe/database
+
+volumes:
+    nginx-data:
+        name: "nginx-data"
+    lolisafe-data:
+        name: "lolisafe-data"
+    lolisafe-database:
+        name: "lolisafe-database"

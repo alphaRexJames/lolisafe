@@ -3,12 +3,15 @@ class ClientError extends Error {
     super(message)
 
     const {
-      statusCode
+      statusCode,
+      code
     } = options
 
     this.statusCode = statusCode !== undefined
       ? statusCode
       : 400
+
+    this.code = code
   }
 }
 

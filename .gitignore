@@ -36,33 +36,33 @@ node_modules/
 # npm's package-lock (if npm is accidentally used)
 package-lock.json
 
+# Docker
+docker/nginx/lolisafe.tld.conf
+docker-compose.config.yml
+
 # vscode's workspace settings
 /.vscode
 *.code-workspace
 
 # Configuration file
 /config.js
+/views/_globals.njk
 
-# Database
-/database/db
-/database/db-*
+# Database directory
+/database
 
 # Uploads directory
 /uploads
 
 # Custom pages directory
-/pages/custom
+/pages/custom/*
 
 # Dist dev
 /dist-dev
 
 # User files
 .DS_Store
+.node-version
 .nvmrc
 !.gitkeep
-/start.json
-/migrate.js
-
-# User directories (renders)
-/public/render/**/original
-/public/render/**/wip
+/public/render/*

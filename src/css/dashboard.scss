@@ -1,5 +1,4 @@
 @charset "utf-8";
-
 @import "_variables";
 
 /** Main **/
@@ -9,7 +8,7 @@ body {
 }
 
 #dashboard {
-  animation: fadeInOpacity 0.5s
+  animation: fade-in-opacity 0.5s
 }
 
 .menu-label {
@@ -73,14 +72,10 @@ body {
       padding-left: 0.75em
     }
   }
-
-  #albumsContainer li {
-    animation: fadeInOpacity 0.5s
-  }
 }
 
 #page.fade-in {
-  animation: fadeInOpacity 0.5s
+  animation: fade-in-opacity 0.5s
 }
 
 .pagination {
@@ -186,9 +181,9 @@ li[data-action="page-ellipsis"] {
     .button {
       border-radius: 0;
 
-      &:not(:active):not(:hover) {
+      &:not(:active,:hover) {
         color: $white;
-        background-color: rgba(0, 0, 0, 143)
+        background-color: rgb(0 0 0 / 56%)
       }
     }
   }

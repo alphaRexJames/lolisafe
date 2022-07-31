@@ -1,0 +1,123 @@
+{% set name = "safe.fiery.me" %}
+{% set motto = "A small safe worth protecting." %}
+{% set description = "A pomf-like file uploading service that doesn't suck." %}
+{% set keywords = "upload,lolisafe,file,images,hosting,bobby,fiery" %}
+
+{# Used in home.njk and nojs.njk #}
+{% set home_subtitle = "A <strong>modern</strong> self-hosted file upload service" %} {# HTML supported #}
+
+{# Used in faq.njk and cookiepolicy.njk #}
+{% set root_domain = "fiery.me" %}
+{% set whole_faq = root_domain + " website and sub-domains" %}
+{% set whole_cookie = "This site and " + root_domain + " website and sub-domains" %}
+{% set email = false %}
+
+{% set fork_repo = "https://github.com/BobbyWibowo/lolisafe" %}
+{% set fork_host = "GitHub" %}
+{% set fork_issues = fork_repo + "/issues/new/choose" %}
+
+{% set takedowns_url = false %}
+{% set server_location = false %} {# HTML supported #}
+
+{# Donation, funding support, or such #}
+{% set support = false %} {# HTML supported #}
+
+{% set enable_faq_banned_categories = false %}
+{% set enable_faq_tor = false %}
+
+{# Enabling the option below will hide FAQ categories which are irrelevant for personal installation #}
+{% set is_for_personal_use = true %}
+
+{# Requires configuring your own renders in public/render. Consult src/js/misc/render.js. #}
+{% set enable_home_renders = null %} {# String of selected config name #}
+{% set enable_home_newsfeed = false %}
+
+{#
+  These are the footer links in the homepage and the No-JS uploader (home.njk & nojs.njk respectively).
+  In the homepage uploader, they will be displayed as icons,
+  but you can choose to display them as texts by setting "home_icons" to false.
+  It will then use the text in "attrs.title" of each links.
+  Note: No-JS uploader page will have icons disabled by default (it will also not load fontello.css).
+#}
+{% set home_icons = true %}
+{% set home_links = [
+  {
+    attrs: {
+      title: 'Home',
+      href: 'https://fiery.me'
+    },
+    icon: 'icon-home icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Blog (Gatsby)',
+      href: 'https://blog.fiery.me'
+    },
+    icon: 'icon-gatsby icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Paste (PrivateBin)',
+      href: 'https://paste.fiery.me'
+    },
+    icon: 'icon-privatebin icon-2x'
+  },
+  {
+    attrs: {
+      id: 'ShareX',
+      title: 'ShareX user profile',
+      href: 'https://safe.fiery.me/safe.fiery.me.sxcu?v=' + v2
+    },
+    icon: 'icon-sharex icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Firefox extension',
+      href: 'https://addons.mozilla.org/en-US/firefox/addon/lolisafe/',
+      target: '_blank',
+      rel: 'noopener'
+    },
+    icon: 'icon-firefox icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Chrome extension',
+      href: 'https://chrome.google.com/webstore/detail/loli-safe-uploader/enkkmplljfjppcdaancckgilmgoiofnj',
+      target: '_blank',
+      rel: 'noopener'
+    },
+    icon: 'icon-chrome icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Bash uploader',
+      href: 'https://github.com/BobbyWibowo/uguush/tree/fiery-kde',
+      target: '_blank',
+      rel: 'noopener'
+    },
+    icon: 'icon-terminal icon-2x'
+  },
+  {
+    attrs: {
+      title: 'FAQ',
+      href: 'faq'
+    },
+    icon: 'icon-help-circled icon-2x'
+  },
+  {
+    attrs: {
+      title: 'Dashboard',
+      href: 'auth'
+    },
+    icon: 'icon-gauge icon-2x'
+  },
+  {
+    attrs: {
+      title: 'View on GitHub',
+      href: 'https://github.com/BobbyWibowo/lolisafe',
+      target: '_blank',
+      rel: 'noopener'
+    },
+    icon: 'icon-github-circled icon-2x'
+  }
+] %}

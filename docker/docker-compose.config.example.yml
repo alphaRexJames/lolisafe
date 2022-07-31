@@ -1,0 +1,8 @@
+version: "3.7"
+
+services:
+    lolisafe:
+        environment:
+            PORT: 9999
+            # DOMAIN: ''
+            # HOME_DOMAIN: ''

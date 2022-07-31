@@ -1,4 +1,5 @@
 {
+  "Version": "13.4.0",
   "Name": "tohru.is-very-cute.moe",
   "DestinationType": "ImageUploader, FileUploader",
   "RequestMethod": "POST",

@@ -1,10 +1,8 @@
 const blake3 = require('blake3')
 const fs = require('fs')
 const path = require('path')
-const paths = require('../controllers/pathsController')
-const utils = require('../controllers/utilsController')
-const config = require('./../config')
-const db = require('knex')(config.database)
+const paths = require('./../controllers/pathsController')
+const utils = require('./../controllers/utilsController')
 
 ;(async () => {
   const location = process.argv[1].replace(process.cwd() + '/', '')
@@ -33,7 +31,7 @@ const db = require('knex')(config.database)
 
   console.log('Querying uploads\u2026')
   const hrstart = process.hrtime()
-  const uploads = await db.table('files')
+  const uploads = await utils.db.table('files')
     .select('id', 'name', 'hash')
   console.log(`Uploads : ${uploads.length}`)
 
@@ -56,7 +54,7 @@ const db = require('knex')(config.database)
           const hash = source.toString('hex')
           if (verbose) console.log(`${upload.name}: ${hash}`)
           if (!dryrun && upload.hash !== hash) {
-            await db.table('files')
+            await utils.db.table('files')
               .update('hash', hash)
               .where('id', upload.id)
           }

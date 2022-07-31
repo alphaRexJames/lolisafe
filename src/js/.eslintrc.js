@@ -1,11 +1,11 @@
 module.exports = {
   root: true,
   parserOptions: {
-    ecmaVersion: 7, // 2016
     sourceType: 'script'
   },
   env: {
-    browser: true
+    browser: true,
+    es2016: true
   },
   extends: [
     'standard',

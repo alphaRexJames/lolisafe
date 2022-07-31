@@ -32,19 +32,31 @@ module.exports = {
 
     Both cases require you to type the domain where the files will be served on the `domain` key below.
     Which one you use is ultimately up to you.
-
-    NOTE: Set to falsy value if using Docker.
   */
   serveFilesWithNode: false,
-  domain: 'https://lolisafe.moe',
+  domain: null,
 
   /*
     If you serve files with node, you can optionally choose to set Content-Disposition header
-    into their original file names. This allows users to save files into their original file names.
+    with their original file names. This allows users to download files into their original file names.
 
-    This will query the DB every time users access uploaded files as there's no caching mechanism.
+    "contentDispositionOptions" configures in-memory caching options,
+    as it would otherwise have to query database every single time.
+
+    If enabled, but "contentDispositionOptions" is missing, it will use these defaults:
+    { limit: 50, strategy: 'LAST_GET_TIME' }
   */
   setContentDisposition: false,
+  contentDispositionOptions: {
+    limit: 50,
+    /*
+      Available strategies: LAST_GET_TIME, GETS_COUNT
+
+      LAST_GET_TIME: when cache store exceeds limit, remove cache with oldest access time
+      GETS_COUNT: when cache store exceeds limit, remove cache with fewest access count
+    */
+    strategy: 'LAST_GET_TIME'
+  },
 
   /*
     If you serve files with node, you can optionally choose to
@@ -56,19 +68,30 @@ module.exports = {
 
   /*
     If you are serving your files with a different domain than your lolisafe homepage,
-    then fill this option with your lolisafe homepage, otherwise any falsy value.
-    This will be used when listing album links in the dashboard.
+    then fill this option with the actual domain for your lolisafe homepage.
+    This will be used for Open Graph tags and wherever lolisafe need to link to internal pages.
+    If any falsy value, it will inherit "domain" option.
+
+    NOTE: If this, or the inherited "domain" option, is not set to an explicit domain,
+    Open Graph tags may fail in websites that do not support relative URLs.
   */
   homeDomain: null,
 
   /*
     Port on which to run the server.
-    NOTE: Change port in .env file if using Docker.
   */
   port: 9999,
 
   /*
     Pages to process for the frontend.
+
+    To add new pages, you may create a new Nunjucks-templated pages (.njk) in "views" directory,
+    then simply add the filename without its extension name into the array below.
+
+    Alternatively, you may create regular HTML files (.html) in "pages/custom" directory.
+    If doing so, you don't need to add the filename into the array,
+    as any changes in said directory will be detected live.
+    You may even add or remove pages while lolisafe is running.
   */
   pages: ['home', 'auth', 'dashboard', 'faq'],
 
@@ -136,17 +159,49 @@ module.exports = {
   },
 
   /*
-    HTTP Strict Transport Security (HSTS).
-    This doesn't enforce HTTP users to switch to HTTPS.
-    It only tells HTTPS users to stick around (i.e. not to downgrade to HTTP).
-    When set, it's also added to HTTP responses because the header will be ignored anyway.
-    https://helmetjs.github.io/docs/hsts/#the-code
+    Helmet security headers.
+    https://github.com/helmetjs/helmet/tree/v5.0.2#how-it-works
+
+    These headers will be applied to ALL resources, including API endpoints,
+    and files if you serve them with node.
+    If you need to disable some of the headers at certain routes, it's recommended
+    to instead use own http server (nginx, etc.) in front of lolisafe and configure from there.
+
+    NOTE: You may set "helmet" option as an empty object {} to disable Helmet entirely.
+    Setting it as any falsy value will instead apply some default configurations.
   */
-  hsts: {
-    // maxAge: 63072000, // 2 years
-    // includeSubDomains: true,
-    // preload: true
+  helmet: {
+    contentSecurityPolicy: false,
+    // Cross-Origin-* headers were enabled by default since Helmet v5.0.0
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+    crossOriginResourcePolicy: false,
+    /*
+    hsts: {
+      maxAge: 63072000, // 2 years
+      includeSubDomains: true,
+      preload: true
+    }
+    */
+    hsts: false,
+    // This was also enabled by default since Helmet v5.0.0
+    originAgentCluster: false
   },
+
+  /*
+    Access-Control-Allow-Origin
+    https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Origin
+    These headers will be applied to ALL resources, including API endpoints,
+    and files if you serve them with node.
+
+    If set to true, it will be set as wildcard (*).
+    If set to any falsy value, it will be not set altogether.
+    Otherwise if any string value, it will be set as-is.
+
+    Whether to use this in conjunction with Cross-Origin-* headers depends on your needs.
+    FAQ: https://resourcepolicy.fyi/#acao
+  */
+  accessControlAllowOrigin: false,
 
   /*
     Trust proxy.
@@ -155,39 +210,24 @@ module.exports = {
   */
   trustProxy: true,
 
+  // DEPRECATED: Please use "rateLimiters" option below instead.
+  // rateLimits: [],
+
   /*
-    Rate limits.
-    Please be aware that these apply to all users, including site owners.
-    https://github.com/nfriedly/express-rate-limit#configuration-options
+    Rate limiters.
+    https://github.com/animir/node-rate-limiter-flexible/wiki/Memory
   */
-  rateLimits: [
-    {
-      // 10 requests in 1 second
-      routes: [
-        '/api/'
-      ],
-      config: {
-        windowMs: 1000,
-        max: 10,
-        message: {
-          success: false,
-          description: 'Rate limit reached, please try again in a while.'
-        }
-      }
-    },
+  rateLimiters: [
     {
       // 2 requests in 5 seconds
       routes: [
+        // If multiple routes, they will share the same points pool
         '/api/login',
         '/api/register'
       ],
-      config: {
-        windowMs: 5 * 1000,
-        max: 2,
-        message: {
-          success: false,
-          description: 'Rate limit reached, please try again in 5 seconds.'
-        }
+      options: {
+        points: 2,
+        duration: 5
       }
     },
     {
@@ -195,9 +235,9 @@ module.exports = {
       routes: [
         '/api/album/zip'
       ],
-      config: {
-        windowMs: 30 * 1000,
-        max: 6
+      options: {
+        points: 6,
+        duration: 30
       }
     },
     {
@@ -205,15 +245,33 @@ module.exports = {
       routes: [
         '/api/tokens/change'
       ],
-      config: {
-        windowMs: 60 * 1000,
-        max: 1,
-        message: {
-          success: false,
-          description: 'Rate limit reached, please try again in 60 seconds.'
-        }
+      options: {
+        points: 1,
+        duration: 60
+      }
+    },
+    /*
+      Routes, whose scope would have encompassed other routes that have their own rate limit pools,
+      must only be set after said routes, otherwise their rate limit pools will never trigger.
+      i.e. since /api/ encompass all other /api/* routes, it must be set last
+    */
+    {
+      // 10 requests in 1 second
+      routes: [
+        '/api/'
+      ],
+      options: {
+        points: 10,
+        duration: 1
       }
     }
+  ],
+
+  /*
+    Whitelisted IP addresses for rate limiters.
+  */
+  rateLimitersWhitelist: [
+    '127.0.0.1'
   ],
 
   /*
@@ -288,7 +346,7 @@ module.exports = {
       will become:
       https://images.weserv.nl/?url=example.com%2Fassets%2Fimage.png
     */
-    urlProxy: 'https://proxy.duckduckgo.com/iu/?u={url}',
+    urlProxy: 'https://external-content.duckduckgo.com/iu/?u={url}&f=1&nofb=1',
 
     /*
       Disclaimer message that will be printed underneath the URL uploads form.
@@ -324,42 +382,87 @@ module.exports = {
       '.svg'
     ],
 
+    // DEPRECATED: Please use "retentionPeriods" option below instead.
+    // temporaryUploadAges: [],
+
     /*
-      An array of allowed ages for uploads (in hours).
+      Usergroup-based file retention periods (temporary uploads ages).
 
-      Default age will be the value at the very top of the array.
-      If the array is populated but do not have a zero value,
-      permanent uploads will be rejected.
-      This only applies to new files uploaded after enabling the option.
+      You need to at least configure the default group (_), or any one group, to enable this.
+      If this is enabled, "temporaryUploadAges" option above will be completely ignored.
 
-      If the array is empty or is set to falsy value, temporary uploads
-      feature will be disabled, and all uploads will be permanent (original behavior).
+      It's safe to disable and remove that option completely if you plan to only use this one.
+      The support for it was only kept as backwards-compatibility for older installations.
 
-      When temporary uploads feature is disabled, any existing temporary uploads
-      will not ever be automatically deleted, since the safe will not start the
-      periodical checkup task.
+      This only applies to new files uploaded AFTER enabling the option.
+      If disabled, any existing temporary uploads will not ever be automatically deleted,
+      since the safe assumes all uploads are permanent,
+      and thus will not start the periodical check up task.
+
+      Please refer to the examples below about inheritances
+      and how to set default retention for each groups.
     */
-    temporaryUploadAges: [
-      0, // permanent
-      1 / 60 * 15, // 15 minutes
-      1 / 60 * 30, // 30 minutes
-      1, // 1 hour
-      6, // 6 hours
-      12, // 12 hours
-      24, // 24 hours (1 day)
-      24 * 2, // 48 hours (2 days)
-      24 * 3, // 72 hours (3 days)
-      24 * 4, // 96 hours (4 days)
-      24 * 5, // 120 hours (5 days)
-      24 * 6, // 144 hours (6 days)
-      24 * 7 // 168 hours (7 days)
-    ],
+    retentionPeriods: {
+      // Defaults that also apply to non-registered users
+      _: [
+        24, // 24 hours (1 day) -- first value is the group's default retention
+        1 / 60 * 15, // 15 minutes
+        1 / 60 * 30, // 30 minutes
+        1, // 1 hour
+        6, // 6 hours
+        12 // 12 hours
+      ],
+      /*
+        Inheritance is based on each group's 'values' in permissionController.js.
+        Basically groups with higher 'value' will inherit retention periods
+        of any groups with lower 'values'.
+        You may remove all the groups below to apply the defaults above for everyone.
+      */
+      user: [
+        24 * 7, // 168 hours (7 days) -- group's default
+        24 * 2, // 48 hours (2 days)
+        24 * 3, // 72 hours (3 days)
+        24 * 4, // 96 hours (4 days)
+        24 * 5, // 120 hours (5 days)
+        24 * 6 // 144 hours (6 days)
+      ],
+      vip: [
+        24 * 30, // 720 hours (30 days) -- group's default
+        24 * 14, // 336 hours (14 days)
+        24 * 21, // 504 hours (21 days)
+        24 * 91 // 2184 hours (91 days)
+      ],
+      vvip: [
+        null, // -- if null, use previous group's default as this group's default
+        0, // permanent
+        24 * 183 // 4392 hours (183 days)
+      ],
+      moderator: [
+        0 // -- group's default
+        /*
+          vvip group also have 0 (permanent) in its retention periods,
+          but duplicates are perfectly fine and will be safely 'uniquified',
+          while still properly maintaining defaults when required.
+        */
+      ]
+      /*
+        Missing groups will follow the inheritance rules.
+        Following the example above, admin and superadmin will have the same retention periods as moderator.
+      */
+    },
 
     /*
       Interval of the periodical check up tasks for temporary uploads (in milliseconds).
       NOTE: Set to falsy value if you prefer to use your own external script.
     */
     temporaryUploadsInterval: 1 * 60000, // 1 minute
+
+    /*
+      Hash files on upload.
+      If enabled, the service will also attempt to detect duplicates by searching for uploads
+      with the exact same hash and size in the database.
+    */
+    hash: true,
 
     /*
       Scan uploads for threats with ClamAV.
@@ -387,27 +490,52 @@ module.exports = {
         '.mov',
         '.mkv'
       ], */
-      // Make sure maxSize is no bigger than the max size you configured for your ClamAV
+
+      // Make sure this doesn't exceed size limit in your ClamAV config
       maxSize: null, // Needs to be in MB
 
-      // https://github.com/kylefarris/clamscan/tree/v1.3.3#getting-started
-      // Breaking options (do not use): remove_infected, quarantine_infected
-      // Untested options (may work): scan_log, debug_mode, file_list, scan_recursively
-      // Supported options: clamscan, clamdscan, preference
+      // https://github.com/kylefarris/clamscan/tree/v2.1.2#getting-started
+      // Breaking options (do not use): removeInfected, quarantineInfected, fileList, scanRecursively
+      // Untested options (may work): scanLog
+      // Supported options: debugMode, clamscan, clamdscan, preference
       clamOptions: {
-        // clamscan: {},
+        debugMode: false,
+        clamscan: {
+          path: '/usr/bin/clamscan',
+          db: null,
+          scanArchives: true,
+          active: true
+        },
         clamdscan: {
           // When both socket and host+port are specified, it will only use socket
           socket: '/var/run/clamav/clamd.ctl',
           host: '127.0.0.1',
           port: 3310,
           timeout: 1 * 60 * 1000, // 1 minute
+          localFallback: true,
+          path: '/usr/bin/clamdscan',
+          configFile: null,
           multiscan: true,
-          reload_db: false,
-          active: true
+          reloadDb: false,
+          active: true,
+          bypassTest: false
         },
         preference: 'clamdscan'
-      }
+      },
+
+      /*
+        Experimental .passthrough() support.
+        https://github.com/kylefarris/clamscan/tree/v2.1.2#passthrough
+
+        If enabled, StreamMaxLength in ClamAV config must be able to accommodate your
+        main "maxSize" option (not to be confused with "maxSize" in "scan" options group).
+        Final file size can't be determined before passthrough,
+        so file of all sizes will have to be scanned regardless.
+
+        This will only passthrough scan non-chunked file uploads.
+        Chunked file uploads and URL uploads will still use the default scan method.
+      */
+      clamPassthrough: false
     },
 
     /*
@@ -428,43 +556,28 @@ module.exports = {
       force: false
     },
 
+    // DEPRECATED: Please use "queryDatabaseForIdentifierMatch" option below instead.
+    // cacheFileIdentifiers: false,
+
+    // DEPRECATED: Please use "queryDatabaseForIdentifierMatch" option below instead.
+    // queryDbForFileCollisions: true,
+
     /*
-      Cache file identifiers.
+      The service will query database on every new uploads,
+      to make sure newly generated random identifier will not match any existing uploads.
 
-      They will be used for stricter collision checks, such that a single identifier
-      may not be used by more than a single file (e.g. if "abcd.jpg" already exists, a new PNG
-      file may not be named as "abcd.png").
+      Otherwise, the same identifier may be used by multiple different extensions
+      (e.g. if "abcd.jpg" already exists, new files can be named as "abcd.png", "abcd.mp4", etc).
 
-      If this is enabled, the safe will query files from the database during first launch,
-      parse their names, then cache the identifiers into memory.
-      Its downside is that it will use a bit more memory.
-
-      If this is disabled, collision check will become less strict.
-      As in, the same identifier may be used by multiple different extensions (e.g. if "abcd.jpg"
-      already exists, new files can be possibly be named as "abcd.png", "abcd.mp4", etc).
-      Its downside will be, in the rare chance that multiple image/video files are sharing the same
-      identifier, they will end up with the same thumbnail in dashboard, since thumbnails will
+      In the rare chance that multiple image/video files are sharing the same identifier,
+      they will end up with the same thumbnail in dashboard, since thumbnails will
       only be saved as PNG in storage (e.g. "abcd.jpg" and "abcd.png" will share a single thumbnail
       named "abcd.png" in thumbs directory, in which case, the file that's uploaded the earliest will
       be the source for the thumbnail).
 
       Unless you do not use thumbnails, it is highly recommended to enable this feature.
     */
-    cacheFileIdentifiers: false,
-
-    /*
-      An alternative to caching file identifiers.
-
-      Basically the service will instead query the database for stricter collision checks.
-      Right off the bat this has the disadvantage of adding one or more SQL queries on every
-      new uploads, but it has the advantage of not having to pre-cache anything.
-      Essentially this reduces the service's startup time and memory usage, but slows down new uploads.
-
-      As this is an alternative, you need to disable cacheFileIdentifiers to use this.
-
-      You'll have to figure out which method suits your use case best.
-    */
-    queryDbForFileCollisions: true,
+    queryDatabaseForIdentifierMatch: true,
 
     /*
       The length of the randomly generated identifier for albums.
@@ -485,7 +598,7 @@ module.exports = {
     */
     generateThumbs: {
       image: true,
-      video: false,
+      video: true,
       // Placeholder defaults to 'public/images/unavailable.png'.
       placeholder: null,
       size: 200
@@ -588,11 +701,13 @@ module.exports = {
   },
 
   /*
-    ADVANCED: Use safe.fiery.me-exclusive cache control.
-    This will only work properly with certain settings in nginx reverse proxy and Cloudflare.
-    Do NOT enable unless you know what you are doing.
-    true: With CDN (Cloudflare)
-    2: When NOT using Cloudflare
+    Enable Cache-Control header tags.
+    Please consult the relevant codes in lolisafe.js to learn the specifics.
+    true or 1: Cloudflare (will cache some frontend pages in CDN)
+    2: Basic Cache-Control without CDNs
+
+    NOTE: If set to Cloudflare, and auth is specified in "cloudflare" option above,
+    lolisafe will automatically call Cloudflare API to purge cache of the relevant frontend pages.
   */
   cacheControl: false,
 
@@ -606,8 +721,8 @@ module.exports = {
     The following values shouldn't be touched, unless you know what you are doing.
   */
   database: {
-    client: 'sqlite3',
-    connection: { filename: './database/db' },
+    client: 'better-sqlite3',
+    connection: { filename: './database/db.sqlite3' },
     useNullAsDefault: true
   }
 }

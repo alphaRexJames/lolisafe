@@ -1,20 +1,30 @@
 const { promisify } = require('util')
+const fastq = require('fastq')
 const fetch = require('node-fetch')
 const ffmpeg = require('fluent-ffmpeg')
+const MarkdownIt = require('markdown-it')
+const knex = require('knex')
 const path = require('path')
 const sharp = require('sharp')
 const si = require('systeminformation')
 const paths = require('./pathsController')
 const perms = require('./permissionController')
-const apiErrorsHandler = require('./handlers/apiErrorsHandler')
 const ClientError = require('./utils/ClientError')
 const ServerError = require('./utils/ServerError')
+const SimpleDataStore = require('./utils/SimpleDataStore')
 const config = require('./../config')
 const logger = require('./../logger')
-const db = require('knex')(config.database)
 
 const self = {
-  clamscan: {
+  devmode: process.env.NODE_ENV === 'development',
+  db: knex(config.database),
+  conf: {
+    // Allow some config options to be overriden via env vars
+    port: process.env.PORT || config.port,
+    domain: process.env.DOMAIN || config.domain,
+    homeDomain: process.env.HOME_DOMAIN || config.homeDomain
+  },
+  scan: {
     instance: null,
     version: null,
     groupBypass: config.uploads.scan.groupBypass || null,
@@ -22,10 +32,19 @@ const self = {
       config.uploads.scan.whitelistExtensions.length)
       ? config.uploads.scan.whitelistExtensions
       : null,
-    maxSize: (parseInt(config.uploads.scan.maxSize) * 1e6) || null
+    maxSize: (parseInt(config.uploads.scan.maxSize) * 1e6) || null,
+    passthrough: config.uploads.scan.clamPassthrough
+  },
+  md: {
+    instance: new MarkdownIt({
+      // https://markdown-it.github.io/markdown-it/#MarkdownIt.new
+      html: false,
+      breaks: true,
+      linkify: true
+    }),
+    defaultRenderers: {}
   },
   gitHash: null,
-  idSet: null,
 
   idMaxTries: config.uploads.maxTries || 1,
 
@@ -40,8 +59,104 @@ const self = {
   thumbsSize: config.uploads.generateThumbs.size || 200,
   ffprobe: promisify(ffmpeg.ffprobe),
 
-  albumsCache: {},
-  timezoneOffset: new Date().getTimezoneOffset()
+  timezoneOffset: new Date().getTimezoneOffset(),
+
+  retentions: {
+    enabled: false,
+    periods: {},
+    default: {}
+  },
+
+  albumRenderStore: new SimpleDataStore({
+    limit: 10,
+    strategy: SimpleDataStore.STRATEGIES[0]
+  }),
+  contentDispositionStore: null
+}
+
+// Remember old renderer, if overridden, or proxy to default renderer
+self.md.defaultRenderers.link_open = self.md.instance.renderer.rules.link_open || function (tokens, idx, options, env, that) {
+  return that.renderToken(tokens, idx, options)
+}
+
+// Add target="_blank" to URLs if applicable
+self.md.instance.renderer.rules.link_open = function (tokens, idx, options, env, that) {
+  const aIndex = tokens[idx].attrIndex('target')
+  if (aIndex < 0) {
+    tokens[idx].attrPush(['target', '_blank'])
+  } else {
+    tokens[idx].attrs[aIndex][1] = '_blank'
+  }
+  return self.md.defaultRenderers.link_open(tokens, idx, options, env, that)
+}
+
+if (typeof config.uploads.retentionPeriods === 'object' &&
+Object.keys(config.uploads.retentionPeriods).length) {
+  // Build a temporary index of group values
+  const _retentionPeriods = Object.assign({}, config.uploads.retentionPeriods)
+  const _groups = { _: -1 }
+  Object.assign(_groups, perms.permissions)
+
+  // Sanitize config values
+  const names = Object.keys(_groups)
+  for (const name of names) {
+    if (Array.isArray(_retentionPeriods[name]) && _retentionPeriods[name].length) {
+      _retentionPeriods[name] = _retentionPeriods[name]
+        .filter((v, i, a) => (Number.isFinite(v) && v >= 0) || v === null)
+    } else {
+      _retentionPeriods[name] = []
+    }
+  }
+
+  if (!_retentionPeriods._.length && !config.private) {
+    logger.error('Guests\' retention periods are missing, yet this installation is not set to private.')
+    process.exit(1)
+  }
+
+  // Create sorted array of group names based on their values
+  const _sorted = Object.keys(_groups)
+    .sort((a, b) => _groups[a] - _groups[b])
+
+  // Build retention periods array for each groups
+  for (let i = 0; i < _sorted.length; i++) {
+    const current = _sorted[i]
+    const _periods = [..._retentionPeriods[current]]
+    self.retentions.default[current] = _periods.length ? _periods[0] : null
+
+    if (i > 0) {
+      // Inherit retention periods of lower-valued groups
+      for (let j = i - 1; j >= 0; j--) {
+        const lower = _sorted[j]
+        if (_groups[lower] < _groups[current]) {
+          _periods.unshift(..._retentionPeriods[lower])
+          if (self.retentions.default[current] === null) {
+            self.retentions.default[current] = self.retentions.default[lower]
+          }
+        }
+      }
+    }
+
+    self.retentions.periods[current] = _periods
+      .filter((v, i, a) => v !== null && a.indexOf(v) === i) // re-sanitize & uniquify
+      .sort((a, b) => a - b) // sort from lowest to highest (zero/permanent will always be first)
+
+    // Mark the feature as enabled, if at least one group was configured
+    if (self.retentions.periods[current].length) {
+      self.retentions.enabled = true
+    }
+  }
+} else if (Array.isArray(config.uploads.temporaryUploadAges) &&
+config.uploads.temporaryUploadAges.length) {
+  self.retentions.periods._ = config.uploads.temporaryUploadAges
+    .filter((v, i, a) => Number.isFinite(v) && v >= 0)
+  self.retentions.default._ = self.retentions.periods._[0]
+
+  for (const name of Object.keys(perms.permissions)) {
+    self.retentions.periods[name] = self.retentions.periods._
+    self.retentions.default[name] = self.retentions.default._
+  }
+
+  self.retentions.enabled = true
 }
 
 const statsData = {
@@ -80,6 +195,77 @@ const statsData = {
 const cloudflareAuth = config.cloudflare && config.cloudflare.zoneId &&
   (config.cloudflare.apiToken || config.cloudflare.userServiceKey ||
   (config.cloudflare.apiKey && config.cloudflare.email))
+
+const cloudflarePurgeCacheQueue = cloudflareAuth && fastq.promise(async chunk => {
+  const MAX_TRIES = 3
+  const url = `https://api.cloudflare.com/client/v4/zones/${config.cloudflare.zoneId}/purge_cache`
+
+  const result = {
+    success: false,
+    files: chunk,
+    errors: []
+  }
+
+  const headers = {
+    'Content-Type': 'application/json'
+  }
+  if (config.cloudflare.apiToken) {
+    headers.Authorization = `Bearer ${config.cloudflare.apiToken}`
+  } else if (config.cloudflare.userServiceKey) {
+    headers['X-Auth-User-Service-Key'] = config.cloudflare.userServiceKey
+  } else if (config.cloudflare.apiKey && config.cloudflare.email) {
+    headers['X-Auth-Key'] = config.cloudflare.apiKey
+    headers['X-Auth-Email'] = config.cloudflare.email
+  }
+
+  for (let i = 0; i < MAX_TRIES; i++) {
+    const _log = message => {
+      let prefix = `[CF]: ${i + 1}/${MAX_TRIES}: ${path.basename(chunk[0])}`
+      if (chunk.length > 1) prefix += ',\u2026'
+      logger.log(`${prefix}: ${message}`)
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: JSON.stringify({ files: chunk }),
+      headers
+    })
+      .then(res => res.json())
+      .catch(error => error)
+
+    // If fetch errors out, instead of API responding with API errors
+    if (response instanceof Error) {
+      const errorString = response.toString()
+      if (i < MAX_TRIES - 1) {
+        _log(`${errorString}. Retrying in 5 seconds\u2026`)
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        continue
+      }
+      result.errors = [errorString]
+      break
+    }
+
+    // If API reponds with API errors
+    const hasErrorsArray = Array.isArray(response.errors) && response.errors.length
+    if (hasErrorsArray) {
+      const rateLimit = response.errors.find(error => /rate limit/i.test(error.message))
+      if (rateLimit && i < MAX_TRIES - 1) {
+        _log(`${rateLimit.code}: ${rateLimit.message}. Retrying in a minute\u2026`)
+        await new Promise(resolve => setTimeout(resolve, 60000))
+        continue
+      }
+    }
+
+    // If succeeds or out of retries
+    result.success = response.success
+    result.errors = hasErrorsArray
+      ? response.errors.map(error => `${error.code}: ${error.message}`)
+      : []
+    break
+  }
+
+  return result
+}, 1) // concurrency: 1
 
 self.mayGenerateThumb = extname => {
   extname = extname.toLowerCase()
@@ -176,7 +362,7 @@ self.escape = string => {
 }
 
 self.stripIndents = string => {
-  if (!string) return
+  if (!string) return string
   const result = string.replace(/^[^\S\n]+/gm, '')
   const match = result.match(/^[^\S\n]*(?=\S)/gm)
   const indent = match && Math.min(...match.map(el => el.length))
@@ -187,9 +373,35 @@ self.stripIndents = string => {
   return result
 }
 
-self.assertUser = async token => {
-  const user = await db.table('users')
+self.mask = string => {
+  if (!string) return string
+  const max = Math.min(Math.floor(string.length / 2), 8)
+  const fragment = Math.floor(max / 2)
+  if (string.length <= fragment) {
+    return '*'.repeat(string.length)
+  } else {
+    return string.substring(0, fragment) +
+      '*'.repeat(Math.min(string.length - (fragment * 2), 4)) +
+      string.substring(string.length - fragment)
+  }
+}
+
+self.assertRequestType = (req, type) => {
+  if (!req.is(type)) {
+    throw new ClientError(`Request Content-Type must be ${type}.`)
+  }
+}
+
+self.assertUser = async (token, fields) => {
+  const _fields = ['id', 'username', 'enabled', 'timestamp', 'permission', 'registration']
+  if (typeof fields === 'string') fields = [fields]
+  if (Array.isArray(fields)) {
+    _fields.push(...fields)
+  }
+
+  const user = await self.db.table('users')
     .where('token', token)
+    .select(_fields)
     .first()
   if (user) {
     if (user.enabled === false || user.enabled === 0) {
@@ -201,12 +413,12 @@ self.assertUser = async token => {
   }
 }
 
-self.authorize = async req => {
+self.authorize = async (req, fields) => {
   const token = req.headers.token
   if (token === undefined) {
     throw new ClientError('No token provided.', { statusCode: 403 })
   }
-  return self.assertUser(token)
+  return self.assertUser(token, fields)
 }
 
 self.generateThumbs = async (name, extname, force) => {
@@ -392,14 +604,8 @@ self.unlinkFile = async (filename, predb) => {
   }
 
   const identifier = filename.split('.')[0]
-
-  // Do not remove from identifiers cache on pre-db-deletion
-  if (!predb && self.idSet) {
-    self.idSet.delete(identifier)
-    // logger.log(`Removed ${identifier} from identifiers cache (deleteFile)`)
-  }
-
   const extname = self.extname(filename, true)
+
   if (self.imageExts.includes(extname) || self.videoExts.includes(extname)) {
     try {
       await paths.unlink(path.join(paths.thumbs, `${identifier}.png`))
@@ -430,7 +636,7 @@ self.bulkDeleteFromDb = async (field, values, user) => {
     const albumids = []
 
     await Promise.all(chunks.map(async chunk => {
-      const files = await db.table('files')
+      const files = await self.db.table('files')
         .whereIn(field, chunk)
         .where(function () {
           if (!ismoderator) {
@@ -457,23 +663,19 @@ self.bulkDeleteFromDb = async (field, values, user) => {
       if (!unlinked.length) return
 
       // Delete all unlinked files from db
-      await db.table('files')
+      await self.db.table('files')
         .whereIn('id', unlinked.map(file => file.id))
         .del()
       self.invalidateStatsCache('uploads')
 
-      if (self.idSet) {
-        unlinked.forEach(file => {
-          const identifier = file.name.split('.')[0]
-          self.idSet.delete(identifier)
-          // logger.log(`Removed ${identifier} from identifiers cache (bulkDeleteFromDb)`)
-        })
-      }
-
-      // Push album ids
       unlinked.forEach(file => {
+        // Push album ids
         if (file.albumid && !albumids.includes(file.albumid)) {
           albumids.push(file.albumid)
+        }
+        // Delete form Content-Disposition store if used
+        if (self.contentDispositionStore) {
+          self.contentDispositionStore.delete(file.name)
         }
       })
 
@@ -484,11 +686,11 @@ self.bulkDeleteFromDb = async (field, values, user) => {
     if (unlinkeds.length) {
       // Update albums if necessary, but do not wait
       if (albumids.length) {
-        db.table('albums')
+        self.db.table('albums')
           .whereIn('id', albumids)
           .update('editedAt', Math.floor(Date.now() / 1000))
           .catch(logger.error)
-        self.invalidateAlbumsCache(albumids)
+        self.deleteStoredAlbumRenders(albumids)
       }
 
       // Purge Cloudflare's cache if necessary, but do not wait
@@ -522,8 +724,8 @@ self.purgeCloudflareCache = async (names, uploads, thumbs) => {
     return [{ success: false, files: [], errors }]
   }
 
-  let domain = config.domain
-  if (!uploads) domain = config.homeDomain
+  let domain = self.conf.domain
+  if (!uploads) domain = self.conf.homeDomain
 
   const thumbNames = []
   names = names.map(name => {
@@ -543,79 +745,16 @@ self.purgeCloudflareCache = async (names, uploads, thumbs) => {
   // Split array into multiple arrays with max length of 30 URLs
   // https://api.cloudflare.com/#zone-purge-files-by-url
   const MAX_LENGTH = 30
-  const MAX_TRIES = 3 // only for rate limit and unexpected errors
   const chunks = []
   while (names.length) {
     chunks.push(names.splice(0, MAX_LENGTH))
   }
 
-  const url = `https://api.cloudflare.com/client/v4/zones/${config.cloudflare.zoneId}/purge_cache`
   const results = []
-
-  await Promise.all(chunks.map(async chunk => {
-    const result = {
-      success: false,
-      files: chunk,
-      errors: []
-    }
-
-    const headers = {
-      'Content-Type': 'application/json'
-    }
-    if (config.cloudflare.apiToken) {
-      headers.Authorization = `Bearer ${config.cloudflare.apiToken}`
-    } else if (config.cloudflare.userServiceKey) {
-      headers['X-Auth-User-Service-Key'] = config.cloudflare.userServiceKey
-    } else if (config.cloudflare.apiKey && config.cloudflare.email) {
-      headers['X-Auth-Key'] = config.cloudflare.apiKey
-      headers['X-Auth-Email'] = config.cloudflare.email
-    }
-
-    for (let i = 0; i < MAX_TRIES; i++) {
-      const _log = message => {
-        let prefix = `[CF]: ${i + 1}/${MAX_TRIES}: ${path.basename(chunk[0])}`
-        if (chunk.length > 1) prefix += ',\u2026'
-        logger.log(`${prefix}: ${message}`)
-      }
-
-      try {
-        const purge = await fetch(url, {
-          method: 'POST',
-          body: JSON.stringify({ files: chunk }),
-          headers
-        })
-        const response = await purge.json()
-
-        const hasErrorsArray = Array.isArray(response.errors) && response.errors.length
-        if (hasErrorsArray) {
-          const rateLimit = response.errors.find(error => /rate limit/i.test(error.message))
-          if (rateLimit && i < MAX_TRIES - 1) {
-            _log(`${rateLimit.code}: ${rateLimit.message}. Retrying in a minute\u2026`)
-            await new Promise(resolve => setTimeout(resolve, 60000))
-            continue
-          }
-        }
-
-        result.success = response.success
-        result.errors = hasErrorsArray
-          ? response.errors.map(error => `${error.code}: ${error.message}`)
-          : []
-      } catch (error) {
-        const errorString = error.toString()
-        if (i < MAX_TRIES - 1) {
-          _log(`${errorString}. Retrying in 5 seconds\u2026`)
-          await new Promise(resolve => setTimeout(resolve, 5000))
-          continue
-        }
-
-        result.errors = [errorString]
-      }
-
-      results.push(result)
-      break
-    }
-  }))
-
+  for (const chunk of chunks) {
+    const result = await cloudflarePurgeCacheQueue.push(chunk)
+    results.push(result)
+  }
   return results
 }
 
@@ -626,7 +765,7 @@ self.bulkDeleteExpired = async (dryrun, verbose) => {
   const sudo = { username: 'root' }
 
   const result = {}
-  result.expired = await db.table('files')
+  result.expired = await self.db.table('files')
     .where('expirydate', '<=', timestamp)
     .select(fields)
 
@@ -635,15 +774,18 @@ self.bulkDeleteExpired = async (dryrun, verbose) => {
     const field = fields[0]
     const values = result.expired.slice().map(row => row[field])
     result.failed = await self.bulkDeleteFromDb(field, values, sudo)
+    if (verbose && result.failed.length) {
+      result.failed = result.failed
+        .map(failed => result.expired.find(file => file[fields[0]] === failed))
+    }
   }
-
   return result
 }
 
-self.invalidateAlbumsCache = albumids => {
+self.deleteStoredAlbumRenders = albumids => {
   for (const albumid of albumids) {
-    delete self.albumsCache[albumid]
-    delete self.albumsCache[`${albumid}-nojs`]
+    self.albumRenderStore.delete(`${albumid}`)
+    self.albumRenderStore.delete(`${albumid}-nojs`)
   }
 }
 
@@ -652,317 +794,324 @@ self.invalidateStatsCache = type => {
   statsData[type].cache = null
 }
 
-self.stats = async (req, res, next) => {
-  try {
-    const user = await self.authorize(req)
+const generateStats = async (req, res) => {
+  const user = await self.authorize(req)
 
-    const isadmin = perms.is(user, 'admin')
-    if (!isadmin) throw new ClientError('', { statusCode: 403 })
+  const isadmin = perms.is(user, 'admin')
+  if (!isadmin) throw new ClientError('', { statusCode: 403 })
 
-    const hrstart = process.hrtime()
-    const stats = {}
-    Object.keys(statsData).forEach(key => {
-      // Pre-assign object keys to fix their display order
-      stats[statsData[key].title] = {}
-    })
+  const hrstart = process.hrtime()
+  const stats = {}
+  Object.keys(statsData).forEach(key => {
+    // Pre-assign object keys to fix their display order
+    stats[statsData[key].title] = {}
+  })
 
-    const os = await si.osInfo()
+  const os = await si.osInfo()
 
-    const getSystemInfo = async () => {
-      const data = statsData.system
+  const getSystemInfo = async () => {
+    const data = statsData.system
 
-      if (!data.cache && data.generating) {
-        stats[data.title] = false
-      } else if (((Date.now() - data.generatedAt) <= 1000) || data.generating) {
-        // Use cache for 1000 ms (1 second)
-        stats[data.title] = data.cache
-      } else {
-        data.generating = true
-        data.generatedAt = Date.now()
+    if (!data.cache && data.generating) {
+      stats[data.title] = false
+    } else if (((Date.now() - data.generatedAt) <= 500) || data.generating) {
+      // Use cache for 500 ms (0.5 seconds)
+      stats[data.title] = data.cache
+    } else {
+      data.generating = true
+      data.generatedAt = Date.now()
 
-        const currentLoad = await si.currentLoad()
-        const mem = await si.mem()
-        const time = si.time()
-        const nodeUptime = process.uptime()
+      const currentLoad = await si.currentLoad()
+      const mem = await si.mem()
+      const time = si.time()
+      const nodeUptime = process.uptime()
 
-        if (self.clamscan.instance) {
-          try {
-            self.clamscan.version = await self.clamscan.instance.get_version().then(s => s.trim())
-          } catch (error) {
-            logger.error(error)
-            self.clamscan.version = 'Errored when querying version.'
-          }
+      if (self.scan.instance) {
+        try {
+          self.scan.version = await self.scan.instance.getVersion().then(s => s.trim())
+        } catch (error) {
+          logger.error(error)
+          self.scan.version = 'Errored when querying version.'
         }
-
-        stats[data.title] = {
-          Platform: `${os.platform} ${os.arch}`,
-          Distro: `${os.distro} ${os.release}`,
-          Kernel: os.kernel,
-          Scanner: self.clamscan.version || 'N/A',
-          'CPU Load': `${currentLoad.currentLoad.toFixed(1)}%`,
-          'CPUs Load': currentLoad.cpus.map(cpu => `${cpu.load.toFixed(1)}%`).join(', '),
-          'System Memory': {
-            value: {
-              used: mem.active,
-              total: mem.total
-            },
-            type: 'byteUsage'
-          },
-          'Memory Usage': {
-            value: process.memoryUsage().rss,
-            type: 'byte'
-          },
-          'System Uptime': {
-            value: time.uptime,
-            type: 'uptime'
-          },
-          'Node.js': `${process.versions.node}`,
-          'Service Uptime': {
-            value: Math.floor(nodeUptime),
-            type: 'uptime'
-          }
-        }
-
-        // Update cache
-        data.cache = stats[data.title]
-        data.generating = false
       }
-    }
 
-    const getFileSystems = async () => {
-      const data = statsData.fileSystems
-
-      if (!data.cache && data.generating) {
-        stats[data.title] = false
-      } else if (((Date.now() - data.generatedAt) <= 60000) || data.generating) {
-        // Use cache for 60000 ms (60 seconds)
-        stats[data.title] = data.cache
-      } else {
-        data.generating = true
-        data.generatedAt = Date.now()
-
-        stats[data.title] = {}
-
-        const fsSize = await si.fsSize()
-        for (const fs of fsSize) {
-          const obj = {
-            value: {
-              total: fs.size,
-              used: fs.used
-            },
-            type: 'byteUsage'
-          }
-          // "available" is a new attribute in systeminformation v5, only tested on Linux,
-          // so add an if-check just in case its availability is limited in other platforms
-          if (typeof fs.available === 'number') {
-            obj.value.available = fs.available
-          }
-          stats[data.title][`${fs.fs} (${fs.type}) on ${fs.mount}`] = obj
+      stats[data.title] = {
+        Platform: `${os.platform} ${os.arch}`,
+        Distro: `${os.distro} ${os.release}`,
+        Kernel: os.kernel,
+        Scanner: self.scan.version || 'N/A',
+        'CPU Load': `${currentLoad.currentLoad.toFixed(1)}%`,
+        'CPUs Load': currentLoad.cpus.map(cpu => `${cpu.load.toFixed(1)}%`).join(', '),
+        'System Memory': {
+          value: {
+            used: mem.active,
+            total: mem.total
+          },
+          type: 'byteUsage'
+        },
+        'Memory Usage': {
+          value: process.memoryUsage().rss,
+          type: 'byte'
+        },
+        'System Uptime': {
+          value: Math.floor(time.uptime),
+          type: 'uptime'
+        },
+        'Node.js': `${process.versions.node}`,
+        'Service Uptime': {
+          value: Math.floor(nodeUptime),
+          type: 'uptime'
         }
-
-        // Update cache
-        data.cache = stats[data.title]
-        data.generating = false
       }
+
+      // Update cache
+      data.cache = stats[data.title]
+      data.generating = false
     }
+  }
 
-    const getUploadsStats = async () => {
-      const data = statsData.uploads
+  const getFileSystems = async () => {
+    const data = statsData.fileSystems
 
-      if (!data.cache && data.generating) {
-        stats[data.title] = false
-      } else if (data.cache) {
-        // Cache will be invalidated with self.invalidateStatsCache() after any related operations
-        stats[data.title] = data.cache
-      } else {
-        data.generating = true
-        data.generatedAt = Date.now()
+    if (!data.cache && data.generating) {
+      stats[data.title] = false
+    } else if (((Date.now() - data.generatedAt) <= 60000) || data.generating) {
+      // Use cache for 60000 ms (60 seconds)
+      stats[data.title] = data.cache
+    } else {
+      data.generating = true
+      data.generatedAt = Date.now()
 
-        stats[data.title] = {
-          Total: 0,
-          Images: 0,
-          Videos: 0,
-          Audios: 0,
-          Others: 0,
-          Temporary: 0,
-          'Size in DB': {
-            value: 0,
-            type: 'byte'
-          }
+      stats[data.title] = {}
+
+      const fsSize = await si.fsSize()
+      for (const fs of fsSize) {
+        const obj = {
+          value: {
+            total: fs.size,
+            used: fs.used
+          },
+          type: 'byteUsage'
         }
-
-        const getTotalCountAndSize = async () => {
-          const uploads = await db.table('files')
-            .select('size')
-          stats[data.title].Total = uploads.length
-          stats[data.title]['Size in DB'].value = uploads.reduce((acc, upload) => acc + parseInt(upload.size), 0)
+        // "available" is a new attribute in systeminformation v5, only tested on Linux,
+        // so add an if-check just in case its availability is limited in other platforms
+        if (typeof fs.available === 'number') {
+          obj.value.available = fs.available
         }
+        stats[data.title][`${fs.fs} (${fs.type}) on ${fs.mount}`] = obj
+      }
 
-        const getImagesCount = async () => {
-          stats[data.title].Images = await db.table('files')
-            .where(function () {
-              for (const ext of self.imageExts) {
-                this.orWhere('name', 'like', `%${ext}`)
-              }
-            })
-            .count('id as count')
-            .then(rows => rows[0].count)
+      // Update cache
+      data.cache = stats[data.title]
+      data.generating = false
+    }
+  }
+
+  const getUploadsStats = async () => {
+    const data = statsData.uploads
+
+    if (!data.cache && data.generating) {
+      stats[data.title] = false
+    } else if (data.cache) {
+      // Cache will be invalidated with self.invalidateStatsCache() after any related operations
+      stats[data.title] = data.cache
+    } else {
+      data.generating = true
+      data.generatedAt = Date.now()
+
+      stats[data.title] = {
+        Total: 0,
+        Images: 0,
+        Videos: 0,
+        Audios: 0,
+        Others: 0,
+        Temporary: 0,
+        'Size in DB': {
+          value: 0,
+          type: 'byte'
         }
+      }
 
-        const getVideosCount = async () => {
-          stats[data.title].Videos = await db.table('files')
-            .where(function () {
-              for (const ext of self.videoExts) {
-                this.orWhere('name', 'like', `%${ext}`)
-              }
-            })
-            .count('id as count')
-            .then(rows => rows[0].count)
-        }
+      const getTotalCountAndSize = async () => {
+        const uploads = await self.db.table('files')
+          .select('size')
+        stats[data.title].Total = uploads.length
+        stats[data.title]['Size in DB'].value = uploads.reduce((acc, upload) => acc + parseInt(upload.size), 0)
+      }
 
-        const getAudiosCount = async () => {
-          stats[data.title].Audios = await db.table('files')
-            .where(function () {
-              for (const ext of self.audioExts) {
-                this.orWhere('name', 'like', `%${ext}`)
-              }
-            })
-            .count('id as count')
-            .then(rows => rows[0].count)
-        }
+      const getImagesCount = async () => {
+        stats[data.title].Images = await self.db.table('files')
+          .where(function () {
+            for (const ext of self.imageExts) {
+              this.orWhere('name', 'like', `%${ext}`)
+            }
+          })
+          .count('id as count')
+          .then(rows => rows[0].count)
+      }
 
-        const getOthersCount = async () => {
-          stats[data.title].Temporary = await db.table('files')
-            .whereNotNull('expirydate')
-            .count('id as count')
-            .then(rows => rows[0].count)
-        }
+      const getVideosCount = async () => {
+        stats[data.title].Videos = await self.db.table('files')
+          .where(function () {
+            for (const ext of self.videoExts) {
+              this.orWhere('name', 'like', `%${ext}`)
+            }
+          })
+          .count('id as count')
+          .then(rows => rows[0].count)
+      }
 
-        await Promise.all([
-          getTotalCountAndSize(),
-          getImagesCount(),
-          getVideosCount(),
-          getAudiosCount(),
-          getOthersCount()
-        ])
+      const getAudiosCount = async () => {
+        stats[data.title].Audios = await self.db.table('files')
+          .where(function () {
+            for (const ext of self.audioExts) {
+              this.orWhere('name', 'like', `%${ext}`)
+            }
+          })
+          .count('id as count')
+          .then(rows => rows[0].count)
+      }
 
-        stats[data.title].Others = stats[data.title].Total -
+      const getOthersCount = async () => {
+        stats[data.title].Temporary = await self.db.table('files')
+          .whereNotNull('expirydate')
+          .count('id as count')
+          .then(rows => rows[0].count)
+      }
+
+      await Promise.all([
+        getTotalCountAndSize(),
+        getImagesCount(),
+        getVideosCount(),
+        getAudiosCount(),
+        getOthersCount()
+      ])
+
+      stats[data.title].Others = stats[data.title].Total -
             stats[data.title].Images -
             stats[data.title].Videos -
             stats[data.title].Audios
 
-        // Update cache
-        data.cache = stats[data.title]
-        data.generating = false
-      }
+      // Update cache
+      data.cache = stats[data.title]
+      data.generating = false
     }
-
-    const getUsersStats = async () => {
-      const data = statsData.users
-
-      if (!data.cache && data.generating) {
-        stats[data.title] = false
-      } else if (data.cache) {
-        // Cache will be invalidated with self.invalidateStatsCache() after any related operations
-        stats[data.title] = data.cache
-      } else {
-        data.generating = true
-        data.generatedAt = Date.now()
-
-        stats[data.title] = {
-          Total: 0,
-          Disabled: 0
-        }
-
-        const permissionKeys = Object.keys(perms.permissions).reverse()
-        permissionKeys.forEach(p => {
-          stats[data.title][p] = 0
-        })
-
-        const users = await db.table('users')
-        stats[data.title].Total = users.length
-        for (const user of users) {
-          if (user.enabled === false || user.enabled === 0) {
-            stats[data.title].Disabled++
-          }
-
-          user.permission = user.permission || 0
-          for (const p of permissionKeys) {
-            if (user.permission === perms.permissions[p]) {
-              stats[data.title][p]++
-              break
-            }
-          }
-        }
-
-        // Update cache
-        data.cache = stats[data.title]
-        data.generating = false
-      }
-    }
-
-    const getAlbumsStats = async () => {
-      const data = statsData.albums
-
-      if (!data.cache && data.generating) {
-        stats[data.title] = false
-      } else if (data.cache) {
-        // Cache will be invalidated with self.invalidateStatsCache() after any related operations
-        stats[data.title] = data.cache
-      } else {
-        data.generating = true
-        data.generatedAt = Date.now()
-
-        stats[data.title] = {
-          Total: 0,
-          Disabled: 0,
-          Public: 0,
-          Downloadable: 0,
-          'ZIP Generated': 0
-        }
-
-        const albums = await db.table('albums')
-        stats[data.title].Total = albums.length
-
-        const activeAlbums = []
-        for (const album of albums) {
-          if (!album.enabled) {
-            stats[data.title].Disabled++
-            continue
-          }
-          activeAlbums.push(album.id)
-          if (album.download) stats[data.title].Downloadable++
-          if (album.public) stats[data.title].Public++
-          if (album.zipGeneratedAt) stats[data.title]['ZIP Generated']++
-        }
-
-        stats[data.title]['Files in albums'] = await db.table('files')
-          .whereIn('albumid', activeAlbums)
-          .count('id as count')
-          .then(rows => rows[0].count)
-
-        // Update cache
-        data.cache = stats[data.title]
-        data.generating = false
-      }
-    }
-
-    await Promise.all([
-      getSystemInfo(),
-      getFileSystems(),
-      getUploadsStats(),
-      getUsersStats(),
-      getAlbumsStats()
-    ])
-
-    return res.json({ success: true, stats, hrtime: process.hrtime(hrstart) })
-  } catch (error) {
-    // Reset generating state when encountering any errors
-    Object.keys(statsData).forEach(key => {
-      statsData[key].generating = false
-    })
-    return apiErrorsHandler(error)
   }
+
+  const getUsersStats = async () => {
+    const data = statsData.users
+
+    if (!data.cache && data.generating) {
+      stats[data.title] = false
+    } else if (data.cache) {
+      // Cache will be invalidated with self.invalidateStatsCache() after any related operations
+      stats[data.title] = data.cache
+    } else {
+      data.generating = true
+      data.generatedAt = Date.now()
+
+      stats[data.title] = {
+        Total: 0,
+        Disabled: 0
+      }
+
+      const permissionKeys = Object.keys(perms.permissions).reverse()
+      permissionKeys.forEach(p => {
+        stats[data.title][p] = 0
+      })
+
+      const users = await self.db.table('users')
+      stats[data.title].Total = users.length
+      for (const user of users) {
+        if (user.enabled === false || user.enabled === 0) {
+          stats[data.title].Disabled++
+        }
+
+        user.permission = user.permission || 0
+        for (const p of permissionKeys) {
+          if (user.permission === perms.permissions[p]) {
+            stats[data.title][p]++
+            break
+          }
+        }
+      }
+
+      // Update cache
+      data.cache = stats[data.title]
+      data.generating = false
+    }
+  }
+
+  const getAlbumsStats = async () => {
+    const data = statsData.albums
+
+    if (!data.cache && data.generating) {
+      stats[data.title] = false
+    } else if (data.cache) {
+      // Cache will be invalidated with self.invalidateStatsCache() after any related operations
+      stats[data.title] = data.cache
+    } else {
+      data.generating = true
+      data.generatedAt = Date.now()
+
+      stats[data.title] = {
+        Total: 0,
+        Disabled: 0,
+        Public: 0,
+        Downloadable: 0,
+        'ZIP Generated': 0
+      }
+
+      const albums = await self.db.table('albums')
+      stats[data.title].Total = albums.length
+
+      const activeAlbums = []
+      for (const album of albums) {
+        if (!album.enabled) {
+          stats[data.title].Disabled++
+          continue
+        }
+        activeAlbums.push(album.id)
+        if (album.download) stats[data.title].Downloadable++
+        if (album.public) stats[data.title].Public++
+      }
+
+      await paths.readdir(paths.zips).then(files => {
+        stats[data.title]['ZIP Generated'] = files.length
+      }).catch(() => {})
+
+      stats[data.title]['Files in albums'] = await self.db.table('files')
+        .whereIn('albumid', activeAlbums)
+        .count('id as count')
+        .then(rows => rows[0].count)
+
+      // Update cache
+      data.cache = stats[data.title]
+      data.generating = false
+    }
+  }
+
+  await Promise.all([
+    getSystemInfo(),
+    getFileSystems(),
+    getUploadsStats(),
+    getUsersStats(),
+    getAlbumsStats()
+  ])
+
+  return res.json({ success: true, stats, hrtime: process.hrtime(hrstart) })
+}
+
+self.stats = async (req, res) => {
+  return generateStats(req, res)
+    .catch(error => {
+      logger.debug('caught generateStats() errors')
+      // Reset generating state when encountering any errors
+      Object.keys(statsData).forEach(key => {
+        statsData[key].generating = false
+      })
+      throw error
+    })
 }
 
 module.exports = self

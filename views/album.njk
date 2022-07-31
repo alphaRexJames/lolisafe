@@ -4,7 +4,7 @@
 {% set metaDesc = album.description | striptags | truncate(200, true, '…') %}
 {% set metaUrl = '/' + album.url %}
 
-{% set fileRoot = config.domain %}
+{% set fileRoot = utils.conf.domain %}
 {% set metaImage = fileRoot + '/' + album.thumb %}
 
 {% extends "_layout.njk" %}
@@ -97,8 +97,8 @@
     </nav>
 
     {% if album.description -%}
-    <div class="subtitle description">
-      {{ album.description | nl2br | safe }}
+    <div class="subtitle description content">
+      {{ album.description | safe }}
     </div>
     {%- endif %}
     <hr>
@@ -147,7 +147,7 @@
 {% set floatingHomeHref = '..' %}
 {% include "_partial/floating-home.njk" %}
 {% if not nojs -%}
-{% set noscriptMessage = 'If you are not automatically redirected to its No-JS version, <a href="' + noJsUrl + '">click here</a>.' %}
+{% set noscriptMessage = '<p>If you are not automatically redirected to its No-JS version, <a href="' + noJsUrl + '">click here</a>.</p>' %}
 {% include "_partial/noscript.njk" %}
 {%- endif %}
 {% endblock %}

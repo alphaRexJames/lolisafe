@@ -54,21 +54,27 @@ const verify = [
   self.customPages
 ]
 
-self.init = async () => {
-  // Check & create directories
+if (['better-sqlite3', 'sqlite3'].includes(config.database.client)) {
+  verify.unshift(path.resolve('database'))
+}
+
+self.initSync = () => {
+  // Check & create directories (synchronous)
   for (const p of verify) {
     try {
-      await self.access(p)
+      fs.accessSync(p)
     } catch (err) {
       if (err.code !== 'ENOENT') {
         throw err
       } else {
-        const mkdir = await self.mkdir(p)
-        if (mkdir) logger.log(`Created directory: ${p}`)
+        fs.mkdirSync(p)
+        logger.log(`Created directory: ${p}`)
       }
     }
   }
+}
 
+self.purgeChunks = async () => {
   // Purge any leftover in chunks directory
   const uuidDirs = await self.readdir(self.chunks)
   await Promise.all(uuidDirs.map(async uuid => {
@@ -79,7 +85,9 @@ self.init = async () => {
     ))
     await self.rmdir(root)
   }))
-  if (uuidDirs.length) logger.log(`Purged ${uuidDirs.length} unfinished chunks`)
+  if (uuidDirs.length) {
+    logger.log(`Purged ${uuidDirs.length} unfinished chunks`)
+  }
 }
 
 module.exports = self

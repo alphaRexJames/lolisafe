@@ -158,7 +158,7 @@ page.onAxiosError = error => {
 }
 
 page.preparePage = () => {
-  if (page.token) page.verifyToken(page.token, true)
+  if (page.token) page.verifyToken(page.token)
   else window.location = 'auth'
 }
 
@@ -182,20 +182,8 @@ page.checkClientVersion = apiVersion => {
   }
 }
 
-page.verifyToken = (token, reloadOnError) => {
+page.verifyToken = token => {
   axios.post('api/tokens/verify', { token }).then(response => {
-    if (response.data.success === false) {
-      return swal({
-        title: 'An error occurred!',
-        text: response.data.description,
-        icon: 'error'
-      }).then(() => {
-        if (!reloadOnError) return
-        localStorage.removeItem(lsKeys.token)
-        window.location = 'auth'
-      })
-    }
-
     axios.defaults.headers.common.token = token
     localStorage[lsKeys.token] = token
 
@@ -207,7 +195,18 @@ page.verifyToken = (token, reloadOnError) => {
     page.username = response.data.username
     page.permissions = response.data.permissions
     page.prepareDashboard()
-  }).catch(page.onAxiosError)
+  }).catch(error => {
+    return swal({
+      title: 'An error occurred!',
+      text: error.response.data ? error.response.data.description : error.toString(),
+      icon: 'error'
+    }).then(() => {
+      if (error.response.data && error.response.data.code === 10001) {
+        localStorage.removeItem(lsKeys.token)
+        window.location = 'auth'
+      }
+    })
+  })
 }
 
 page.prepareDashboard = () => {
@@ -386,6 +385,8 @@ page.domClick = event => {
       return page.editAlbum(id)
     case 'disable-album':
       return page.disableAlbum(id)
+    case 'delete-album':
+      return page.deleteAlbum(id)
     case 'view-album-uploads':
       return page.viewAlbumUploads(id, element)
     // Manage users
@@ -677,9 +678,9 @@ page.getUploads = (params = {}) => {
 
     for (let i = 0; i < files.length; i++) {
       // Build full URLs
-      files[i].file = `${basedomain}/${files[i].name}`
+      files[i].file = `${basedomain || window.location.origin}/${files[i].name}`
       if (files[i].thumb) {
-        files[i].thumb = `${basedomain}/${files[i].thumb}`
+        files[i].thumb = `${basedomain ? `${basedomain}/` : ''}${files[i].thumb}`
       }
 
       // Determine types
@@ -769,6 +770,11 @@ page.getUploads = (params = {}) => {
               </span>
             </a>`
               : ''}
+            <a class="button is-small is-info" title="View file info" href="file/${upload.name}" target="_blank">
+              <span class="icon">
+                <i class="icon-info"></i>
+              </span>
+            </a>
             <a class="button is-small is-info clipboard-js" title="Copy link to clipboard" data-clipboard-text="${upload.file}">
               <span class="icon">
                 <i class="icon-clipboard"></i>
@@ -788,9 +794,9 @@ page.getUploads = (params = {}) => {
           <div class="details">
             <p class="name" title="${upload.file}">${upload.name}</p>
             ${showOriginalNames ? `<p class="originalname" title="${upload.original}">${upload.original}</p>` : ''}
-            <p class="prettybytes">${upload.appendix ? `<span>${upload.appendix}</span> – ` : ''}${upload.prettyBytes}</p>
+            <p class="prettybytes" data-bytes="${upload.size}">${upload.appendix ? `<span>${upload.appendix}</span> – ` : ''}${upload.prettyBytes}</p>
             ${hasExpiryDateColumn && upload.prettyExpiryDate
-              ? `<p class="prettyexpirydate">EXP: ${upload.prettyExpiryDate}</p>`
+              ? `<p class="prettyexpirydate"${upload.expirydate ? ` data-timestamp="${upload.expirydate}"` : ''}>EXP: ${upload.prettyExpiryDate}</p>`
               : ''}
           </div>
         `
@@ -841,14 +847,19 @@ page.getUploads = (params = {}) => {
           ${showOriginalNames ? `<th class="originalname" title="${upload.original}">${upload.original}</th>` : ''}
           ${typeof params.album === 'undefined' ? `<th class="appendix">${upload.appendix}</th>` : ''}
           ${allAlbums ? `<th class="album">${upload.albumid ? (albums[upload.albumid] || '') : ''}</th>` : ''}
-          <td class="prettybytes">${upload.prettyBytes}</td>
+          <td class="prettybytes" data-bytes="${upload.size}">${upload.prettyBytes}</td>
           ${params.all ? `<td class="ip">${upload.ip || ''}</td>` : ''}
-          <td class="prettydate">${upload.prettyDate}</td>
-          ${hasExpiryDateColumn ? `<td class="prettyexpirydate">${upload.prettyExpiryDate || '-'}</td>` : ''}
+          <td class="prettydate" data-timestamp="${upload.timestamp}">${upload.prettyDate}</td>
+          ${hasExpiryDateColumn ? `<td class="prettyexpirydate"${upload.expirydate ? ` data-timestamp="${upload.expirydate}"` : ''}>${upload.prettyExpiryDate || '-'}</td>` : ''}
           <td class="controls has-text-right">
             <a class="button is-small is-primary is-outlined" title="${upload.previewable ? 'Display preview' : 'File can\'t be previewed'}" data-action="display-preview"${upload.previewable ? '' : ' disabled'}>
               <span class="icon">
                 <i class="${upload.type !== 'other' ? `icon-${upload.type}` : 'icon-doc-inv'}"></i>
+              </span>
+            </a>
+            <a class="button is-small is-info is-outlined" title="View file info" href="file/${upload.name}" target="_blank">
+              <span class="icon">
+                <i class="icon-info"></i>
               </span>
             </a>
             <a class="button is-small is-info is-outlined clipboard-js" title="Copy link to clipboard" data-clipboard-text="${upload.file}">
@@ -951,8 +962,8 @@ page.displayPreview = id => {
   div.innerHTML = `
     <div class="content has-text-centered">
       <p>
-        <div class="has-text-weight-bold">${file.name}</div>
-        <div>${file.original}</div>
+        <div class="has-text-weight-bold has-word-break-all">${file.name}</div>
+        <div class="has-word-break-all">${file.original}</div>
       </p>
       ${file.thumb
         ? `<p class="swal-display-thumb-container">
@@ -1002,7 +1013,6 @@ page.displayPreview = id => {
       })
     } else {
       const match = file.file.match(/.*\/(.*)$/)
-      console.log(file.file, match)
       if (match || match[1]) {
         div.querySelector('#swalOriginal').setAttribute('href', `v/${match[1]}`)
         div.querySelector('#swalOriginal').setAttribute('target', '_blank')
@@ -1621,7 +1631,7 @@ page.getAlbums = (params = {}) => {
     page.cache = {}
 
     const users = response.data.users
-    const homeDomain = response.data.homeDomain
+    const homeDomain = response.data.homeDomain || window.location.origin
 
     if (params.pageNum < 0) params.pageNum = Math.max(0, pages + params.pageNum)
     const pagination = page.paginate(response.data.count, 25, params.pageNum)
@@ -1684,7 +1694,7 @@ page.getAlbums = (params = {}) => {
           </a>
           <a class="button is-small is-dangerish is-outlined" title="Bulk disable (WIP)" data-action="bulk-disable-albums" disabled>
             <span class="icon">
-              <i class="icon-trash"></i>
+              <i class="icon-cancel"></i>
             </span>
             ${!params.all ? '<span>Bulk disable</span>' : ''}
           </a>
@@ -1798,6 +1808,7 @@ page.getAlbums = (params = {}) => {
         download: album.download,
         public: album.public,
         description: album.description,
+        descriptionHtml: album.descriptionHtml,
         enabled,
         homeDomain,
         urlPath,
@@ -1812,10 +1823,10 @@ page.getAlbums = (params = {}) => {
         <th${enabled ? '' : ' class="has-text-grey"'}>${album.name}</td>
         ${params.all ? `<th>${album.userid ? (users[album.userid] || '') : ''}</th>` : ''}
         <th>${album.uploads}</th>
-        <td>${page.getPrettyBytes(album.size)}</td>
-        <td>${album.prettyDate}</td>
-        <td>${album.hasZip ? page.getPrettyBytes(album.zipSize) : '-'}</td>
-        <td${album.isZipExpired ? ' class="has-text-warning" title="This album has been modified since the last time its ZIP was generated."' : ''}>${album.hasZip ? album.prettyZipDate : '-'}</td$>
+        <td data-bytes="${album.size}">${page.getPrettyBytes(album.size)}</td>
+        <td data-timestamp="${album.timestamp}">${album.prettyDate}</td>
+        <td${album.hasZip ? ` data-bytes="${album.zipSize}"` : ''}>${album.hasZip ? page.getPrettyBytes(album.zipSize) : '-'}</td>
+        <td${album.hasZip ? ` data-timestamp="${album.zipGeneratedAt}"` : ''}${album.isZipExpired ? ' class="has-text-warning" title="This album has been modified since the last time its ZIP was generated."' : ''}>${album.hasZip ? album.prettyZipDate : '-'}</td$>
         <td><a ${enabled && album.public ? '' : 'class="is-linethrough" '}href="${albumUrl}" target="_blank">${albumUrlText}</a></td>
         <td class="has-text-right" data-id="${album.id}">
           <a class="button is-small is-primary is-outlined" title="Edit album" data-action="edit-album">
@@ -1840,9 +1851,16 @@ page.getAlbums = (params = {}) => {
           </a>
           <a class="button is-small is-dangerish is-outlined" title="Disable album" data-action="disable-album"${enabled ? '' : ' disabled'}>
             <span class="icon is-small">
-              <i class="icon-trash"></i>
+              <i class="icon-cancel"></i>
             </span>
           </a>
+          ${params.all
+            ? `<a class="button is-small is-danger is-outlined" title="Delete album" data-action="delete-album">
+              <span class="icon is-small">
+                <i class="icon-trash"></i>
+              </span>
+            </a>`
+            : ''}
         </td>
       `
 
@@ -1896,8 +1914,16 @@ page.editAlbum = id => {
       <div class="control">
         <textarea id="swalDescription" class="textarea" placeholder="Description" rows="2" maxlength="${page.albumDescMaxLength}">${(album.description || '').substring(0, page.albumDescMaxLength)}</textarea>
       </div>
-      <p class="help">Max length is ${page.albumDescMaxLength} characters.</p>
+      <p class="help"><b>Markdown supported.</b> Max length is ${page.albumDescMaxLength} characters.</p>
     </div>
+    ${album.descriptionHtml
+      ? `<div class="field">
+          <div class="content swal-display-description-preview">
+            ${album.descriptionHtml}
+          </div>
+          <p class="help">Save changes then re-open this Edit prompt to refresh this preview.</p>
+        </div>`
+      : ''}
     ${page.currentView === 'albumsAll' && page.permissions.moderator
       ? `<div class="field">
           <div class="control">
@@ -2035,7 +2061,63 @@ page.disableAlbum = id => {
         }
       }
 
-      swal('Disabled!', 'Your album has been disabled.', 'success', {
+      swal('Disabled!', 'The album has been disabled.', 'success', {
+        buttons: false,
+        timer: 1500
+      })
+
+      page.getAlbumsSidebar()
+      // Reload albums list
+      // eslint-disable-next-line compat/compat
+      page.getAlbums(Object.assign(page.views[page.currentView], {
+        autoPage: true
+      }))
+    }).catch(page.onAxiosError)
+  })
+}
+
+page.deleteAlbum = id => {
+  swal({
+    title: 'Are you sure?',
+    text: 'You won\'t be able to recover this album!\n' +
+      'This also won\'t delete the uploads associated with the album!',
+    icon: 'warning',
+    dangerMode: true,
+    buttons: {
+      cancel: true,
+      confirm: {
+        text: 'Yes, delete it!',
+        closeModal: false
+      },
+      purge: {
+        text: 'Umm, delete the uploads, please?',
+        value: 'purge',
+        className: 'swal-button--danger',
+        closeModal: false
+      }
+    }
+  }).then(proceed => {
+    if (!proceed) return
+
+    axios.post('api/albums/delete', {
+      id,
+      purge: proceed === 'purge'
+    }).then(response => {
+      if (response.data.success === false) {
+        const failed = Array.isArray(response.data.failed)
+          ? response.data.failed
+          : []
+
+        if (response.data.description === 'No token provided') {
+          return page.verifyToken(page.token)
+        } else if (failed.length) {
+          return swal('An error occurred!', `Unable to delete ${failed.length} of the album's upload${failed.length === 1 ? '' : 's'}.`, 'error')
+        } else {
+          return swal('An error occurred!', response.data.description, 'error')
+        }
+      }
+
+      swal('Disabled!', 'The album has been deleted.', 'success', {
         buttons: false,
         timer: 1500
       })
@@ -2669,7 +2751,7 @@ page.editUser = id => {
     ${isHigher
       ? ''
       : `<div class="notification is-danger">
-      You <strong>cannot</strong> modify user in the same or higher group as you.
+      You <b>cannot</b> modify user in the same or higher group as you.
     </div>`
     }
   `
@@ -2852,7 +2934,7 @@ page.deleteUser = id => {
   })
 }
 
-// Roughly based on https://github.com/mayuska/pagination/blob/master/index.js
+// Roughly based on https://github.com/mayuska/pagination/blob/03cac0fb8af3a759bc1220bd3c011b67dbc5e909/index.js
 page.paginate = (totalItems, itemsPerPage, currentPage) => {
   currentPage = currentPage + 1
   const step = 3

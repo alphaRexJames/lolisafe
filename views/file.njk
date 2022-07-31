@@ -1,0 +1,113 @@
+{%- import '_globals.njk' as globals -%}
+
+{% set metaTitle = "File" %}
+
+{% set uploadRoot = utils.conf.domain %}
+{% set titleFormat = '%identifier% | ' + globals.name %}
+
+{% extends "_layout.njk" %}
+
+{% block stylesheets %}
+<!-- Libs stylesheets -->
+<link rel="stylesheet" href="../libs/fontello/fontello.css{{ versions[1] }}">
+<!-- Stylesheets -->
+<link rel="stylesheet" href="../css/style.css{{ versions[1] }}">
+<link rel="stylesheet" href="../css/sweetalert.css{{ versions[1] }}">
+{% endblock %}
+
+{% block scripts %}
+<!-- Libs scripts -->
+<script src="../libs/sweetalert/sweetalert.min.js{{ versions[3] }}"></script>
+<script src="../libs/axios/axios.min.js{{ versions[3] }}"></script>
+<script src="../libs/clipboard.js/clipboard.min.js{{ versions[3] }}"></script>
+<!-- Scripts -->
+{# We assign an ID for this so that the script can find out proper root URL of uploaded files #}
+<script id="mainScript" src="../js/file.js{{ versions[1] }}" data-upload-root="{{ uploadRoot }}" data-title-format="
+{{ titleFormat }}"></script>
+<script src="../js/misc/utils.js{{ versions[1] }}"></script>
+{% endblock %}
+
+{% set noscriptRefreshUrl = null %}
+{% block endmeta %}
+{% include "_partial/noscript-refresh.njk" %}
+{% endblock %}
+
+{% block content %}
+{{ super() }}
+<section class="section has-extra-bottom-padding">
+  <div class="container">
+    <nav class="level">
+      <div class="level-left">
+        <div class="level-item">
+          <h1 id="title" class="title">
+            {{ metaTitle }}
+          </h1>
+        </div>
+      </div>
+    </nav>
+    <hr>
+
+    <article id="message" class="message">
+      <div class="message-body">
+        <p>Loading&#x2026;</p>
+      </div>
+    </article>
+
+    <div id="fileinfo" class="is-hidden has-text-centered">
+      <div class="field is-hidden">
+        <img class="is-unselectable">
+      </div>
+      <div class="table-container has-text-left"></div>
+      <div class="columns">
+        <div class="column">
+          <div class="control">
+              <a id="clipboardBtn" class="button is-info is-outlined is-flex clipboard-js">
+                <span class="icon">
+                  <i class="icon-clipboard"></i>
+                </span>
+                <span>Copy link to clipboard</span>
+              </a>
+          </div>
+        </div>
+        <div class="column is-hidden">
+          <div class="control">
+            <a id="playerBtn" class="button is-info is-outlined is-flex" target="_blank">
+              <span class="icon">
+                <i class="icon-video"></i>
+              </span>
+              <span>Play in embedded player</span>
+            </a>
+          </div>
+        </div>
+        <div class="column">
+          <div class="control">
+            <a id="downloadBtn" class="button is-primary is-outlined is-flex">
+              <span class="icon">
+                <i class="icon-download"></i>
+              </span>
+              <span>Download</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="columns">
+        <div class="column">
+          <div class="control">
+            <a id="deleteBtn" class="button is-danger is-outlined is-fullwidth">
+              <span class="icon">
+                <i class="icon-trash"></i>
+              </span>
+              <span>Delete</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% set floatingHomeHref = '..' %}
+{% include "_partial/floating-home.njk" %}
+{% set noscriptMessage = null %}
+{% include "_partial/noscript.njk" %}
+{% endblock %}

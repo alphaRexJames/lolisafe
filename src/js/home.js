@@ -22,6 +22,7 @@ const page = {
   maxSize: null,
   chunkSizeConfig: null,
   temporaryUploadAges: null,
+  defaultTemporaryUploadAge: null,
   fileIdentifierLength: null,
   stripTagsConfig: null,
 
@@ -81,6 +82,7 @@ page.onInitError = error => {
     window.location.reload()
   })
 
+  if (!error) return
   if (error.response) page.onAxiosError(error)
   else page.onError(error)
 }
@@ -175,12 +177,15 @@ page.checkIfPublic = () => {
 
     page.maxSize = parseInt(response.data.maxSize)
     page.maxSizeBytes = page.maxSize * 1e6
+    document.querySelector('#maxSize > span').innerHTML = page.getPrettyBytes(page.maxSizeBytes)
+
     page.chunkSizeConfig = {
       max: (response.data.chunkSize && parseInt(response.data.chunkSize.max)) || 95,
       default: response.data.chunkSize && parseInt(response.data.chunkSize.default)
     }
 
     page.temporaryUploadAges = response.data.temporaryUploadAges
+    page.defaultTemporaryUploadAge = response.data.defaultTemporaryUploadAge || null
     page.fileIdentifierLength = response.data.fileIdentifierLength
     page.stripTagsConfig = response.data.stripTags
 
@@ -189,42 +194,48 @@ page.checkIfPublic = () => {
 }
 
 page.preparePage = () => {
-  if (page.private) {
-    if (page.token) {
-      return page.verifyToken(page.token, true)
+  if (page.token) {
+    return page.verifyToken(page.token)
+  } else if (page.private) {
+    const button = document.querySelector('#loginToUpload')
+    button.href = 'auth'
+    button.classList.remove('is-loading')
+    if (page.enableUserAccounts) {
+      button.innerText = 'Anonymous upload is disabled.\nLog in or register to upload.'
     } else {
-      const button = document.querySelector('#loginToUpload')
-      button.href = 'auth'
-      button.classList.remove('is-loading')
-      if (page.enableUserAccounts) {
-        button.innerText = 'Anonymous upload is disabled.\nLog in or register to upload.'
-      } else {
-        button.innerText = 'Running in private mode.\nLog in to upload.'
-      }
+      button.innerText = 'Running in private mode.\nLog in to upload.'
     }
   } else {
     return page.prepareUpload()
   }
 }
 
-page.verifyToken = (token, reloadOnError) => {
+page.verifyToken = token => {
   return axios.post('api/tokens/verify', { token }).then(response => {
-    if (response.data.success === false) {
-      return swal({
-        title: 'An error occurred!',
-        text: response.data.description,
-        icon: 'error'
-      }).then(() => {
-        if (!reloadOnError) return
-        localStorage.removeItem('token')
-        window.location.reload()
-      })
-    }
-
     localStorage[lsKeys.token] = token
     page.token = token
+
+    // If user has its own retention periods array, override defaults
+    if (Array.isArray(response.data.retentionPeriods)) {
+      page.temporaryUploadAges = response.data.retentionPeriods
+      page.defaultTemporaryUploadAge = response.data.defaultRetentionPeriod
+    }
+
     return page.prepareUpload()
-  }).catch(page.onInitError)
+  }).catch(error => {
+    return swal({
+      title: 'An error occurred!',
+      text: error.response.data ? error.response.data.description : error.toString(),
+      icon: 'error'
+    }).then(() => {
+      if (error.response.data && error.response.data.code === 10001) {
+        localStorage.removeItem(lsKeys.token)
+        window.location.reload()
+      } else {
+        page.onInitError()
+      }
+    })
+  })
 }
 
 page.prepareUpload = () => {
@@ -254,8 +265,7 @@ page.prepareUpload = () => {
   // Prepare & generate config tab
   page.prepareUploadConfig()
 
-  // Update elements wherever applicable
-  document.querySelector('#maxSize > span').innerHTML = page.getPrettyBytes(page.maxSizeBytes)
+  // Hide login button
   document.querySelector('#loginToUpload').classList.add('is-hidden')
 
   // Prepare & generate files upload tab
@@ -373,7 +383,9 @@ page.prepareDropzone = () => {
     headers: { token: page.token },
     chunking: Boolean(page.chunkSize),
     chunkSize: page.chunkSize * 1e6, // this option expects Bytes
-    parallelChunkUploads: false, // for now, enabling this breaks descriptive upload progress
+    // Lolisafe cannot handle parallel chunked uploads
+    // due to technical reasons involving how we optimize I/O performance
+    parallelChunkUploads: false,
     timeout: 0,
 
     init () {
@@ -543,12 +555,13 @@ page.prepareDropzone = () => {
       file.previewElement.querySelector('.descriptive-progress').innerHTML =
         `Rebuilding ${file.upload.totalChunkCount} chunks\u2026`
 
-      return axios.post('api/upload/finishchunks', {
+      axios.post('api/upload/finishchunks', {
         // This API supports an array of multiple files
         files: [{
           uuid: file.upload.uuid,
           original: file.name,
           type: file.type,
+          size: file.size,
           albumid: page.album,
           filelength: page.fileLength,
           age: page.uploadAge
@@ -574,7 +587,7 @@ page.prepareDropzone = () => {
           page.updateTemplate(file, response.data.files[0])
         }
 
-        return done()
+        done()
       })
     }
   })
@@ -683,7 +696,11 @@ page.updateTemplate = (file, response) => {
   const link = file.previewElement.querySelector('.link')
   const a = link.querySelector('a')
   const clipboard = file.previewElement.querySelector('.clipboard-mobile > .clipboard-js')
-  a.href = a.innerHTML = clipboard.dataset.clipboardText = response.url
+  let url = response.url
+  if (!/^https?:\/\//i.test(url)) {
+    url = `${window.location.origin}/${url}`
+  }
+  a.href = a.innerHTML = clipboard.dataset.clipboardText = url
 
   link.classList.remove('is-hidden')
   clipboard.parentElement.classList.remove('is-hidden')
@@ -717,6 +734,7 @@ page.updateTemplate = (file, response) => {
 
   if (response.expirydate) {
     const expiryDate = file.previewElement.querySelector('.expiry-date')
+    expiryDate.dataset.timestamp = response.expirydate
     expiryDate.innerHTML = `EXP: ${page.getPrettyDate(new Date(response.expirydate * 1000))}`
     expiryDate.classList.remove('is-hidden')
   }
@@ -821,6 +839,15 @@ page.prepareUploadConfig = () => {
       help: 'This will be used in our homepage, dashboard, and album public pages.',
       valueHandler () {} // Do nothing
     },
+    ampmTime: {
+      label: 'Show AM/PM on date',
+      select: [
+        { value: 'default', text: 'No' },
+        { value: '1', text: 'Yes' }
+      ],
+      help: 'This will be used in our homepage and dashboard.',
+      valueHandler () {} // Do nothing
+    },
     fileLength: {
       display: fileIdentifierLength,
       label: 'File identifier length',
@@ -907,11 +934,14 @@ page.prepareUploadConfig = () => {
   }
 
   if (temporaryUploadAges) {
+    const _default = page.defaultTemporaryUploadAge === null
+      ? page.temporaryUploadAges[0]
+      : page.defaultTemporaryUploadAge
     const stored = parseFloat(localStorage[lsKeys.uploadAge])
     for (let i = 0; i < page.temporaryUploadAges.length; i++) {
       const age = page.temporaryUploadAges[i]
       config.uploadAge.select.push({
-        value: i === 0 ? 'default' : String(age),
+        value: age === _default ? 'default' : String(age),
         text: page.getPrettyUploadAge(age)
       })
       if (age === stored) {

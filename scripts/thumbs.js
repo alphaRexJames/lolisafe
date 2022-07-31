@@ -1,8 +1,6 @@
 const path = require('path')
-const paths = require('../controllers/pathsController')
-const utils = require('../controllers/utilsController')
-const config = require('./../config')
-const db = require('knex')(config.database)
+const paths = require('./../controllers/pathsController')
+const utils = require('./../controllers/utilsController')
 
 const self = {
   mode: null,
@@ -53,7 +51,7 @@ const self = {
 
   console.log('Looking through existing thumbnails\u2026')
   const hrstart = process.hrtime()
-  const uploads = await db.table('files')
+  const uploads = await utils.db.table('files')
     .select('id', 'name')
   const thumbs = await self.getFiles(paths.thumbs)
     .then(thumbs => thumbs.map(thumb => {

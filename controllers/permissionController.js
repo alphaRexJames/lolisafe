@@ -2,11 +2,27 @@ const self = {}
 
 self.permissions = Object.freeze({
   user: 0, // Upload & delete own files, create & delete albums
+  vip: 5, // If used with "retentionPeriods" in config, may have additional retention period options
+  vvip: 10, // If used with "retentionPeriods" in config, may have additional retention period options
   moderator: 50, // Delete other user's files
   admin: 80, // Manage users (disable accounts) & create moderators
   superadmin: 100 // Create admins
   // Groups will inherit permissions from groups which have lower value
+  // You should NOT have multiple groups with exact same values
 })
+
+self.keys = Object.freeze(Object.keys(self.permissions))
+
+self.group = user => {
+  // root bypass
+  if (user.username === 'root') return 'superadmin'
+  for (const key of self.keys) {
+    if (user.permission === self.permissions[key]) {
+      return key
+    }
+  }
+  return null
+}
 
 // returns true if user is in the group OR higher
 self.is = (user, group) => {

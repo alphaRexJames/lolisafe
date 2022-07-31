@@ -53,6 +53,7 @@
     </article>
     {%- endif %}
 
+    {% if not globals.is_for_personal_use -%}
     <h3 class="subtitle has-text-white-ter">Will you keep my uploads forever?</h3>
     <article class="message">
       <div class="message-body">
@@ -90,14 +91,19 @@
         I don't know.
       </div>
     </article>
+    {%- endif %}
 
+    {% if globals.email -%}
     <h3 class="subtitle has-text-white-ter">I saw something too illegal for my tastes here, what should I do?</h3>
     <article class="message">
       <div class="message-body">
         Send a strongly worded email to <a href="mailto:{{ globals.email }}">{{ globals.email }}</a> and I will try to get back to you within <strong>48 hours</strong>.<br>
+        {% if globals.enable_faq_banned_categories -%}
         These include copyright takedown notices and reports about uploads violating banned categories.
+        {%- endif %}
       </div>
     </article>
+    {%- endif %}
 
     {% if globals.support -%}
     <h3 class="subtitle has-text-white-ter">How can I support {{ globals.name }}?</h3>
@@ -133,12 +139,15 @@
       </div>
     </article>
 
+    {% if not globals.is_for_personal_use -%}
+    {# lolisafe does not do this by default, enable only if you specifically do so #}
     <h3 class="subtitle has-text-white-ter">Why are my <strong>.htm/.html</strong> uploads being served as plain text?</h3>
     <article class="message">
       <div class="message-body">
         There had been too many phishing pages being uploaded in the past.
       </div>
     </article>
+    {%- endif %}
 
     {% if globals.server_location -%}
     <h3 class="subtitle has-text-white-ter">Where is the server located?</h3>
@@ -153,7 +162,7 @@
     </article>
     {%- endif %}
 
-    {% if config.cloudflare.purgeCache -%}
+    {% if config.cloudflare.purgeCache and not globals.is_for_personal_use -%}
     <h3 class="subtitle has-text-white-ter">Since my uploads are cached, what about after I delete them from the dashboard?</h3>
     <article class="message">
       <div class="message-body">
@@ -178,7 +187,7 @@
     <h3 class="subtitle has-text-white-ter">Are there any Desktop clients?</h3>
     <article class="message">
       <div class="message-body">
-        We do have some browser extensions:<br>
+        We do have some browser extensions to assist uploads:<br>
         <a href="https://addons.mozilla.org/en-US/firefox/addon/lolisafe/" target="_blank" rel="noopener">Firefox extension</a>. Maintained by me. Its GitHub repository is located <a href="https://github.com/BobbyWibowo/loli-safe-extension" target="_blank" rel="noopener">here</a>.<br>
         <a href="https://chrome.google.com/webstore/detail/loli-safe-uploader/enkkmplljfjppcdaancckgilmgoiofnj" target="_blank" rel="noopener">Chrome extension</a>. Maintained by lolisafe's team. Its GitHub repository is located <a href="https://github.com/WeebDev/loli-safe-extension" target="_blank" rel="noopener">here</a>.<br>
         With the Chrome extension specifically, you will have to manually set the domain in the extension's settings to <code>https://safe.fiery.me</code>.<br>
@@ -223,16 +232,19 @@
     </article>
     {%- endif %}
 
-    {% if globals.fork_repo -%}
+    {% if globals.fork_repo and not globals.is_for_personal_use -%}
     <h3 class="subtitle has-text-white-ter">I found a bug! -or- I want to request a feature!</h3>
     <article class="message">
       <div class="message-body">
         Feel free to create a {{ globals.fork_host }} issue <a href="{{ globals.fork_issues }}" target="_blank" rel="noopener">here</a>.</br>
+        {% if globals.email -%}
         If you do not have a {{ globals.fork_host }} account, you can also email <a href="mailto:{{ globals.email }}">{{ globals.email }}</a>.
+        {%- endif %}
       </div>
     </article>
     {%- endif %}
 
+    {% if not globals.is_for_personal_use -%}
     <h3 class="subtitle has-text-white-ter">How do I delete my own account <strong>and</strong> all the uploads associated with it?</h3>
     <article class="message">
       <div class="message-body">
@@ -241,6 +253,7 @@
         Otherwise, if you do not mind a record of your username being left here, it should be easy to bulk delete all your uploads from the Dashboard anyway.
       </div>
     </article>
+    {%- endif %}
   </div>
 </section>
 
@@ -248,6 +261,7 @@
   <div class="container has-text-left">
     <h2 id="privacy" class='title is-spaced'>Privacy</h2>
 
+    {% if not globals.is_for_personal_use -%}
     <h3 class="subtitle has-text-white-ter">What information is kept with uploads?</h3>
     <article class="message">
       <div class="message-body">
@@ -273,6 +287,7 @@
         My safe have been plagued by aplenty of abuse, so this policy will remain as long as the safe lives on.
       </div>
     </article>
+    {%- endif %}
 
     <h3 class="subtitle has-text-white-ter">Does the server have some sort of access logs?</h3>
     <article class="message">
@@ -296,12 +311,14 @@
     </article>
     {%- endif %}
 
+    {% if globals.email -%}
     <h3 class="subtitle has-text-white-ter">I still have more unanswered questions!</h3>
     <article class="message">
       <div class="message-body">
         Feel free to email <a href="mailto:{{ globals.email }}">{{ globals.email }}</a>.
       </div>
     </article>
+    {%- endif %}
   </div>
 </section>
 

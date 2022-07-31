@@ -1,7 +1,7 @@
 {%- import '_globals.njk' as globals -%}
 
 {# Set root domain here to inherit values from config file #}
-{%- set root = config.homeDomain or config.domain -%}
+{%- set root = utils.conf.homeDomain or utils.conf.domain -%}
 
 {%- set title -%}
 {%- if metaTitle -%}

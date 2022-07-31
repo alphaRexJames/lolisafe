@@ -5,13 +5,11 @@
         <p>
           This page requires JavaScript to function.
         </p>
-        <p>
-          {%- if noscriptMessage -%}
-          {{ noscriptMessage | safe }}
-          {%- else -%}
-          If you are not automatically redirected to our No-JS uploader, <a href="nojs">click here</a>.
-          {%- endif -%}
-        </p>
+        {% if noscriptMessage or (noscriptMessage === null) -%}
+        {{ noscriptMessage | safe }}
+        {%- else -%}
+        <p>If you are not automatically redirected to our No-JS uploader, <a href="nojs">click here</a>.</p>
+        {%- endif %}
       </div>
     </div>
   </section>

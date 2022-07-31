@@ -1,18 +1,8 @@
 @charset "utf-8";
-
 @import "_variables";
+/* stylelint-disable keyframes-name-pattern */
 
 /** Animations **/
-
-@-webkit-keyframes pulseWarning {
-  0% {
-    border-color: $warning
-  }
-
-  to {
-    border-color: $warning-dark
-  }
-}
 
 @keyframes pulseWarning {
   0% {
@@ -21,16 +11,6 @@
 
   to {
     border-color: $warning-dark
-  }
-}
-
-@-webkit-keyframes pulseWarningBody {
-  0% {
-    background-color: $warning
-  }
-
-  to {
-    background-color: $warning-dark
   }
 }
 
@@ -177,4 +157,14 @@ $swal-modal-background: $grey-darker;
   display: flex;
   align-items: center;
   justify-content: center
+}
+
+.swal-display-description-preview {
+  background-color: $scheme-main;
+  border-radius: 4px;
+  padding: calc(0.5em - 1px) calc(0.75em - 1px) calc(0.5em - 1px) calc(0.75em - 1px);
+
+  &.content {
+    margin-bottom: 0
+  }
 }

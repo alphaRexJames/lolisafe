@@ -86,6 +86,9 @@ page.verify = () => {
     // Redirect to dashboard if token is valid
     window.location = 'dashboard'
   }).catch(error => {
+    if (error.response.data && error.response.data.code === 10001) {
+      localStorage.removeItem(lsKeys.token)
+    }
     page.unhide()
     page.onAxiosError(error)
   })
