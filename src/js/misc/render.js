@@ -52,7 +52,7 @@ render.showTogglePrompt = () => {
     if (value === 'reload') {
       render.do(true)
     } else if (value) {
-      const newValue = div.querySelector('#swalRender').checked ? undefined : '0'
+      const newValue = div.querySelector('#swalRender').checked ? void 0 : '0'
       if (newValue !== localStorage[render.lsKey]) {
         if (newValue) localStorage[render.lsKey] = newValue
         else localStorage.removeItem(render.lsKey)

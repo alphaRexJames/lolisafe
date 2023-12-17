@@ -1,5 +1,5 @@
 const blake3 = require('blake3')
-const fs = require('fs')
+const jetpack = require('fs-jetpack')
 const path = require('path')
 const paths = require('./../controllers/pathsController')
 const utils = require('./../controllers/utilsController')
@@ -46,7 +46,7 @@ const utils = require('./../controllers/utilsController')
 
   for (const upload of uploads) {
     await new Promise((resolve, reject) => {
-      fs.createReadStream(path.join(paths.uploads, upload.name))
+      jetpack.createReadStream(path.join(paths.uploads, upload.name))
         .on('error', reject)
         .pipe(blake3.createHash())
         .on('error', reject)

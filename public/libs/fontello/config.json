@@ -277,6 +277,12 @@
       "css": "info",
       "code": 59421,
       "src": "entypo"
+    },
+    {
+      "uid": "d59ff824282fc6edaeca991deab522aa",
+      "css": "server",
+      "code": 62003,
+      "src": "fontawesome"
     }
   ]
 }

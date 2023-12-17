@@ -23,21 +23,28 @@ class NunjucksRenderer {
 
   #middleware (req, res, next) {
     // Inject render() method into Response on each requests
-    // If usePersistentCache, the rendered template will be cached forever (thus only use for absolutely static pages)
-    res.render = (path, params, usePersistentCache) => this.#render(res, path, params, usePersistentCache)
+    res.render = (...args) => this.#render(res, ...args)
     return next()
   }
 
-  #render (res, path, params, usePersistentCache) {
+  #render (res, path, context, usePersistentCache = false) {
+    // If usePersistentCache is true, the rendered templates will be cached forever,
+    // thus only use for absolutely static pages
+    if (!path) {
+      throw new Error('Missing Nunjucks template name.')
+    }
+
     return new Promise((resolve, reject) => {
       const template = `${path}.njk`
 
-      const cached = this.#persistentCaches.get(template)
-      if (usePersistentCache && cached) {
-        return resolve(cached)
+      if (usePersistentCache) {
+        const cached = this.#persistentCaches.get(template)
+        if (cached) {
+          return resolve(cached)
+        }
       }
 
-      this.environment.render(template, params, (err, html) => {
+      this.environment.render(template, context, (err, html) => {
         if (err) {
           return reject(err)
         }
@@ -47,7 +54,8 @@ class NunjucksRenderer {
         resolve(html)
       })
     }).then(html => {
-      res.type('html').send(html)
+      res.header('Content-Type', 'text/html; charset=utf-8')
+      res.send(html)
       return html
     })
   }

@@ -1,6 +1,6 @@
-const paths = require('./../controllers/pathsController')
+const jetpack = require('fs-jetpack')
 const perms = require('./../controllers/permissionController')
-const config = require('./../config')
+const config = require('./../controllers/utils/ConfigManager')
 
 const map = {
   files: {
@@ -22,14 +22,9 @@ const map = {
 
 ;(async () => {
   if (['better-sqlite3', 'sqlite3'].includes(config.database.client)) {
-    try {
-      await paths.access(config.database.connection.filename)
-    } catch (err) {
-      if (err.code === 'ENOENT') {
-        console.log('Sqlite3 database file missing. Assumes first install, migration skipped.')
-        process.exit(0)
-      }
-      throw err
+    if (!await jetpack.existsAsync(config.database.connection.filename)) {
+      console.log('Sqlite3 database file missing. Assumes first install, migration skipped.')
+      process.exit(0)
     }
   }
 
@@ -51,33 +46,57 @@ const map = {
     }
   }
 
-  const root = await db.table('users')
-    .where('username', 'root')
-    .select('permission')
-    .first()
-  if (root.permission !== perms.permissions.superadmin) {
-    await db.table('users')
-      .where('username', 'root')
+  if (config.superadminForcePromote) {
+    if (!config.superadminAccount) {
+      console.log('Attempting to promote superadmin user, but "superadminAccount" field is missing from config.')
+      process.exit(0)
+    }
+
+    const superadminAccount = await db.table('users')
+      .where('username', config.superadminAccount)
+      .select('permission')
       .first()
-      .update({
-        permission: perms.permissions.superadmin
-      })
-      .then(result => {
-        // NOTE: permissionController.js actually has a hard-coded check for "root" account so that
-        // it will always have "superadmin" permission regardless of its permission value in database
-        console.log(`Updated root's permission to ${perms.permissions.superadmin} (superadmin).`)
-        done++
-      })
+
+    if (!superadminAccount) {
+      console.log(`Superadmin account "${config.superadminAccount}" is not found in database.`)
+      process.exit(0)
+    }
+
+    if (superadminAccount.permission !== perms.permissions.superadmin) {
+      await db.table('users')
+        .where('username', config.superadminAccount)
+        .first()
+        .update({
+          permission: perms.permissions.superadmin
+        })
+        .then(result => {
+          console.log(`Updated "${config.superadminAccount}"'s permission to ${perms.permissions.superadmin} (superadmin).`)
+          done++
+        })
+    }
   }
 
-  const files = await db.table('files')
+  const filesOutdatedSize = await db.table('files')
     .where('size', 'like', '%.0')
-  if (files.length) {
-    console.log(`Found ${files.length} files with outdated "size" field, converting\u2026`)
-    for (const file of files) {
+  if (filesOutdatedSize.length) {
+    console.log(`Found ${filesOutdatedSize.length} files with outdated "size" field, converting\u2026`)
+    for (const file of filesOutdatedSize) {
       const size = file.size.replace(/\.0$/, '')
       await db.table('files')
         .update('size', size)
+        .where('id', file.id)
+      done++
+    }
+  }
+
+  const filesMissingType = await db.table('files')
+    .where('type', '')
+    .orWhereNull('type')
+  if (filesMissingType.length) {
+    console.log(`Found ${filesMissingType.length} files with invalid "type" field, converting\u2026`)
+    for (const file of filesMissingType) {
+      await db.table('files')
+        .update('type', 'application/octet-stream')
         .where('id', file.id)
       done++
     }

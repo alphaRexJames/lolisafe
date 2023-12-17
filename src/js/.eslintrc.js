@@ -12,6 +12,8 @@ module.exports = {
     'plugin:compat/recommended'
   ],
   rules: {
+    'no-undefined': 'error',
+    'no-void': 0,
     'object-shorthand': [
       'error',
       'always'

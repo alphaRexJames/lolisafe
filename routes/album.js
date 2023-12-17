@@ -3,7 +3,7 @@ const routes = new Router()
 const path = require('path')
 const errors = require('./../controllers/errorsController')
 const utils = require('./../controllers/utilsController')
-const config = require('./../config')
+const config = require('./../controllers/utils/ConfigManager')
 
 routes.get('/a/:identifier', async (req, res) => {
   const identifier = req.path_parameters && req.path_parameters.identifier
@@ -23,6 +23,7 @@ routes.get('/a/:identifier', async (req, res) => {
     return errors.handleNotFound(req, res)
   }
 
+  album.name = utils.unescape(album.name)
   const nojs = req.query_parameters.nojs !== undefined
 
   let cacheid
@@ -32,7 +33,8 @@ routes.get('/a/:identifier', async (req, res) => {
 
     const cache = utils.albumRenderStore.get(cacheid)
     if (cache) {
-      return res.type('html').send(cache)
+      res.header('Content-Type', 'text/html; charset=utf-8')
+      return res.send(cache)
     } else if (cache === null) {
       return res.render('album-notice', {
         config,
@@ -47,7 +49,7 @@ routes.get('/a/:identifier', async (req, res) => {
   }
 
   const files = await utils.db.table('files')
-    .select('name', 'size')
+    .select('name', 'size', 'timestamp')
     .where('albumid', album.id)
     .orderBy('id', 'desc')
 
@@ -59,7 +61,9 @@ routes.get('/a/:identifier', async (req, res) => {
 
     file.extname = path.extname(file.name)
     if (utils.mayGenerateThumb(file.extname)) {
-      file.thumb = `thumbs/${file.name.slice(0, -file.extname.length)}.png`
+      let thumbext = '.png'
+      if (utils.isAnimatedThumb(file.extname)) thumbext = '.gif'
+      file.thumb = `thumbs/${file.name.slice(0, -file.extname.length)}${thumbext}`
       // If thumbnail for album is still not set, set it to current file's full URL.
       // A potential improvement would be to let the user set a specific image as an album cover.
       if (!album.thumb) album.thumb = file.name

@@ -1,4 +1,5 @@
 const fresh = require('fresh')
+const parseRange = require('range-parser')
 
 const self = {
   BYTES_RANGE_REGEXP: /^ *bytes=/
@@ -11,11 +12,19 @@ self.isFresh = (req, res) => {
   })
 }
 
+self.forwardSlashes = path => {
+  return path.split('\\').join('/')
+}
+
+self.relativePath = (root, path) => {
+  return self.forwardSlashes(path).replace(root, '')
+}
+
 /*
  * Based on https://github.com/pillarjs/send/blob/0.18.0/index.js
  * Copyright(c) 2012 TJ Holowaychuk
  * Copyright(c) 2014-2022 Douglas Christopher Wilson
- * MIT Licensed
+ * MIT License
  */
 
 self.isRangeFresh = (req, res) => {
@@ -106,6 +115,78 @@ self.parseTokenList = str => {
   }
 
   return list
+}
+
+self.assertConditionalGET = (req, res) => {
+  if (self.isConditionalGET(req)) {
+    if (self.isPreconditionFailure(req, res)) {
+      res.status(412)
+      return true
+    }
+
+    if (self.isFresh(req, res)) {
+      res.status(304)
+      return true
+    }
+  }
+}
+
+self.buildReadStreamOptions = (req, res, stat, acceptRanges) => {
+  // ReadStream options
+  let length = stat.size
+  const options = {}
+  let ranges = req.headers.range
+  let offset = 0
+
+  // Adjust len to start/end options
+  length = Math.max(0, length - offset)
+  if (options.end !== undefined) {
+    const bytes = options.end - offset + 1
+    if (length > bytes) {
+      length = bytes
+    }
+  }
+
+  // Range support
+  if (acceptRanges && self.BYTES_RANGE_REGEXP.test(ranges)) {
+    // Parse
+    ranges = parseRange(length, ranges, {
+      combine: true
+    })
+
+    // If-Range support
+    if (!self.isRangeFresh(req, res)) {
+      // Stale
+      ranges = -2
+    }
+
+    // Unsatisfiable
+    if (ranges === -1) {
+      // Content-Range
+      res.header('Content-Range', self.contentRange('bytes', length))
+
+      // 416 Requested Range Not Satisfiable
+      res.status(416)
+      return false
+    }
+
+    // Valid (syntactically invalid/multiple ranges are treated as a regular response)
+    if (ranges !== -2 && ranges.length === 1) {
+      // Content-Range
+      res.status(206)
+      res.header('Content-Range', self.contentRange('bytes', length, ranges[0]))
+
+      // Adjust for requested range
+      offset += ranges[0].start
+      length = ranges[0].end - ranges[0].start + 1
+    }
+  }
+
+  // Set read options
+  options.start = offset
+  options.end = Math.max(offset, offset + length - 1)
+
+  return { options, length }
 }
 
 module.exports = self

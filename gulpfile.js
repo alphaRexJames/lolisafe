@@ -1,10 +1,11 @@
 const { exec } = require('child_process')
+const path = require('path')
 const gulp = require('gulp')
 const cssnano = require('cssnano')
-const del = require('del')
 const buble = require('gulp-buble')
 const eslint = require('gulp-eslint-new')
 const gulpif = require('gulp-if')
+const jetpack = require('fs-jetpack')
 const nodemon = require('gulp-nodemon')
 const postcss = require('gulp-postcss')
 const postcssPresetEnv = require('postcss-preset-env')
@@ -14,6 +15,7 @@ const sassCompiler = require('sass')
 const sourcemaps = require('gulp-sourcemaps')
 const stylelint = require('@ronilaukkarinen/gulp-stylelint')
 const terser = require('gulp-terser')
+
 let sassEmbeddedCompiler
 try {
   sassEmbeddedCompiler = require('sass-embedded')
@@ -24,8 +26,11 @@ try {
 // This will prevent IDE's Git from unnecessarily
 // building diff's during development.
 const dist = process.env.NODE_ENV === 'development'
-  ? './dist-dev'
-  : './dist'
+  ? path.join(__dirname, 'dist-dev')
+  : path.join(__dirname, 'dist')
+
+// Ensure dist directory exists.
+jetpack.dir(dist)
 
 const postcssPlugins = [
   postcssPresetEnv()
@@ -74,27 +79,38 @@ gulp._settle = false
 
 /** TASKS: CLEAN */
 
-gulp.task('clean:style', () => {
-  return del([
-    `${dist}/**/*.css`,
-    `${dist}/**/*.css.map`
-  ])
+gulp.task('clean:style', async () => {
+  return jetpack.findAsync(dist, {
+    matching: '**/*.css*(.map)'
+  }).then(files =>
+    Promise.all(files.map(file =>
+      jetpack.removeAsync(file)
+    ))
+  )
 })
 
 gulp.task('clean:js', () => {
-  return del([
-    `${dist}/**/*.js`,
-    `${dist}/**/*.js.map`
-  ])
+  return jetpack.findAsync(dist, {
+    matching: '**/*.js*(.map)'
+  }).then(files =>
+    Promise.all(files.map(file =>
+      jetpack.removeAsync(file)
+    ))
+  )
 })
 
 gulp.task('clean:rest', () => {
-  return del([
-    `${dist}/*`
-  ])
+  // Delete all other files and sub-directories
+  return jetpack.findAsync(dist, {
+    directories: true
+  }).then(files =>
+    Promise.all(files.map(file =>
+      jetpack.removeAsync(file)
+    ))
+  )
 })
 
-gulp.task('clean', gulp.parallel('clean:style', 'clean:js', 'clean:rest'))
+gulp.task('clean', gulp.series(gulp.parallel('clean:style', 'clean:js'), 'clean:rest'))
 
 /** TASKS: BUILD */
 
@@ -140,6 +156,8 @@ gulp.task('build:js', () => {
 })
 
 gulp.task('build', gulp.parallel('build:sass', 'build:css', 'build:fontello', 'build:js'))
+
+gulp.task('build-dev', gulp.series('clean', 'build'))
 
 /** TASKS: VERSION STRINGS */
 
@@ -203,4 +221,4 @@ gulp.task('nodemon', cb => {
   })
 })
 
-gulp.task('watch', gulp.series('clean', 'build', gulp.parallel('watch:src', 'nodemon')))
+gulp.task('watch', gulp.series('clean', 'build', gulp.parallel('nodemon', 'watch:src')))

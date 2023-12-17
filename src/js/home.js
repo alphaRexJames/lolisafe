@@ -54,13 +54,26 @@ const page = {
   urlsQueue: [],
   activeUrlsQueue: 0,
 
-  // Include BMP for uploads preview only, cause the real images will be used
-  // Sharp isn't capable of making their thumbnails for dashboard and album public pages
+  // Include BMP for uploads preview only, because the real images will be used instead of server-generated thumbnails
+  // Sharp is not capable of generating thumbnails for BMP images
   imageExts: ['.gif', '.jpeg', '.jpg', '.png', '.svg', '.tif', '.tiff', '.webp', '.bmp'],
   videoExts: ['.avi', '.m2ts', '.m4v', '.mkv', '.mov', '.mp4', '.webm', '.wmv'],
 
   albumTitleMaxLength: 70,
-  albumDescMaxLength: 4000
+  albumDescMaxLength: 4000,
+
+  // Better Cloudflare errors
+  cloudflareErrors: {
+    520: 'Unknown Error',
+    521: 'Web Server Is Down',
+    522: 'Connection Timed Out',
+    523: 'Origin Is Unreachable',
+    524: 'A Timeout Occurred',
+    525: 'SSL Handshake Failed',
+    526: 'Invalid SSL Certificate',
+    527: 'Railgun Error',
+    530: 'Origin DNS Error'
+  }
 }
 
 // Handler for errors during initialization
@@ -104,30 +117,23 @@ page.onError = error => {
 }
 
 // Handler for Axios errors
-page.onAxiosError = (error, cont) => {
-  if (!cont) console.error(error)
-
-  // Better Cloudflare errors
-  const cloudflareErrors = {
-    520: 'Unknown Error',
-    521: 'Web Server Is Down',
-    522: 'Connection Timed Out',
-    523: 'Origin Is Unreachable',
-    524: 'A Timeout Occurred',
-    525: 'SSL Handshake Failed',
-    526: 'Invalid SSL Certificate',
-    527: 'Railgun Error',
-    530: 'Origin DNS Error'
+page.onAxiosError = error => {
+  if (!error.response) {
+    return page.onError(error)
   }
 
-  const statusText = cloudflareErrors[error.response.status] || error.response.statusText
+  const statusText = page.cloudflareErrors[error.response.status] || error.response.statusText
+  const description = error.response.data && error.response.data.description
+    ? error.response.data.description
+    : 'There was an error with the request.\nPlease check the console for more information.'
 
-  if (!cont) {
-    const description = error.response.data && error.response.data.description
-      ? error.response.data.description
-      : 'There was an error with the request.\nPlease check the console for more information.'
-    return swal(`${error.response.status} ${statusText}`, description, 'error')
-  } else if (error.response.data && error.response.data.description) {
+  return swal(`${error.response.status} ${statusText}`, description, 'error')
+}
+
+page.formatAxiosError = error => {
+  const statusText = page.cloudflareErrors[error.response.status] || error.response.statusText
+
+  if (error.response.data && error.response.data.description) {
     return error.response
   } else {
     const description = error.response
@@ -212,6 +218,7 @@ page.preparePage = () => {
 
 page.verifyToken = token => {
   return axios.post('api/tokens/verify', { token }).then(response => {
+    axios.defaults.headers.common.token = token
     localStorage[lsKeys.token] = token
     page.token = token
 
@@ -223,11 +230,7 @@ page.verifyToken = token => {
 
     return page.prepareUpload()
   }).catch(error => {
-    return swal({
-      title: 'An error occurred!',
-      text: error.response.data ? error.response.data.description : error.toString(),
-      icon: 'error'
-    }).then(() => {
+    return page.onAxiosError(error).then(() => {
       if (error.response.data && error.response.data.code === 10001) {
         localStorage.removeItem(lsKeys.token)
         window.location.reload()
@@ -324,12 +327,7 @@ page.setActiveTab = index => {
 }
 
 page.fetchAlbums = () => {
-  return axios.get('api/albums', {
-    headers: {
-      simple: '1',
-      token: page.token
-    }
-  }).then(response => {
+  return axios.get('api/albums', { headers: { simple: '1' } }).then(response => {
     if (response.data.success === false) {
       return swal('An error occurred!', response.data.description, 'error')
     }
@@ -526,13 +524,13 @@ page.prepareDropzone = () => {
         if (typeof error === 'object' && error.description) {
           err = error.description
         } else if (xhr) {
-          // Formatting the Object is necessary since the function expect Axios errors
-          err = page.onAxiosError({
+          const formatted = page.formatAxiosError({
             response: {
               status: xhr.status,
               statusText: xhr.statusText
             }
-          }, true).data.description
+          })
+          err = formatted.data.description
         } else if (error instanceof Error) {
           err = error.toString()
         }
@@ -568,12 +566,11 @@ page.prepareDropzone = () => {
         }]
       }, {
         headers: {
-          token: page.token,
           // Unlike the options above (e.g. albumid, filelength, etc.),
           // strip tags cannot yet be configured per file with this API
-          striptags: page.stripTags
+          striptags: page.stripTags || ''
         }
-      }).catch(error => page.onAxiosError(error, true)).then(response => {
+      }).catch(error => page.formatAxiosError(error)).then(response => {
         file.previewElement.querySelector('.descriptive-progress').classList.add('is-hidden')
 
         if (response.data.success === false) {
@@ -662,12 +659,11 @@ page.processUrlsQueue = () => {
       urls: [file.url]
     }, {
       headers: {
-        token: page.token,
-        albumid: page.album,
-        age: page.uploadAge,
-        filelength: page.fileLength
+        albumid: page.album || '',
+        age: page.uploadAge || '',
+        filelength: page.fileLength || ''
       }
-    }).catch(error => page.onAxiosError(error, true)).then(response => {
+    }).catch(error => page.formatAxiosError(error)).then(response => {
       return finishedUrlUpload(file, response.data)
     })
   }
@@ -792,10 +788,6 @@ page.createAlbum = () => {
       description: document.querySelector('#swalDescription').value.trim(),
       download: document.querySelector('#swalDownload').checked,
       public: document.querySelector('#swalPublic').checked
-    }, {
-      headers: {
-        token: page.token
-      }
     }).then(response => {
       if (response.data.success === false) {
         return swal('An error occurred!', response.data.description, 'error')
@@ -858,7 +850,7 @@ page.prepareUploadConfig = () => {
             default: page.fileIdentifierLength.default,
             round: true
           }
-        : undefined,
+        : void 0,
       help: true, // true means auto-generated, for number-based configs only
       disabled: fileIdentifierLength && page.fileIdentifierLength.force
     },
@@ -987,9 +979,9 @@ page.prepareUploadConfig = () => {
       } else {
         const stored = localStorage[lsKeys[key]]
         if (Array.isArray(conf.select)) {
-          value = conf.select.find(sel => sel.value === stored)
-            ? stored
-            : undefined
+          if (conf.select.find(sel => sel.value === stored)) {
+            value = stored
+          }
         } else {
           value = stored
         }

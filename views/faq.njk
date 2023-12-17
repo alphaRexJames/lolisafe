@@ -202,12 +202,14 @@
       </div>
     </article>
 
+    {% if config.routes.nojs !== false -%}
     <h3 class="subtitle has-text-white-ter">Do you have a No-JS uploader form?</h3>
     <article class="message">
       <div class="message-body">
         <a href="nojs" target="_blank"><strong>Yes!</strong></a>
       </div>
     </article>
+    {%- endif %}
 
     {% if noJsMaxSizeInt and chunkSizeInt -%}
     <h3 class="subtitle has-text-white-ter">Why is the maximum file size in the No-JS uploader form smaller?</h3>

@@ -21,6 +21,16 @@ module.exports = {
   enableUserAccounts: true,
 
   /*
+    Be advised that this section is only relevant to the migration script.
+    This serves as a compatibility layer to non-fork installs,
+    as it will try to force promote the chosen user to superadmin usergroup,
+    since base lolisafe v3 do not have usergroups system.
+    It is recommended to set "superadminForcePromote" to any falsy value for existing installs.
+  */
+  superadminAccount: 'root',
+  superadminForcePromote: true,
+
+  /*
     Here you can decide if you want lolisafe to serve the files or if you prefer doing so via nginx.
     The main difference between the two is the ease of use and the chance of analytics in the future.
     If you set it to `true`, the uploaded files will be located after the host like:
@@ -103,6 +113,25 @@ module.exports = {
     NOTE: Enabling this will automatically push 'cookiepolicy' to pages array above.
   */
   cookiePolicy: false,
+
+  /*
+    Additional routes that come with their own frontend pages logic (in routes/routeName.js).
+    These routes will always be enabled by default, even if the option below is missing,
+    so they need to be explicitly set to false to disable.
+
+    NOTE: Some frontend scripts in dashboard, etc., will always assume that they are all enabled,
+    so they may end up with dead links if disabled (i.e. file info button in dashboard),
+    but otherwise their other own main functions should remain working.
+
+    In short, this is mainly intended for those who know what they are doing,
+    and are willing to modify the scripts themselves when required.
+  */
+  routes: {
+    album: true,
+    file: true,
+    nojs: true,
+    player: true
+  },
 
   /*
     This can be either 'blacklist' or 'whitelist', which should be self-explanatory.
@@ -218,18 +247,6 @@ module.exports = {
     https://github.com/animir/node-rate-limiter-flexible/wiki/Memory
   */
   rateLimiters: [
-    {
-      // 2 requests in 5 seconds
-      routes: [
-        // If multiple routes, they will share the same points pool
-        '/api/login',
-        '/api/register'
-      ],
-      options: {
-        points: 2,
-        duration: 5
-      }
-    },
     {
       // 6 requests in 30 seconds
       routes: [
@@ -521,21 +538,7 @@ module.exports = {
           bypassTest: false
         },
         preference: 'clamdscan'
-      },
-
-      /*
-        Experimental .passthrough() support.
-        https://github.com/kylefarris/clamscan/tree/v2.1.2#passthrough
-
-        If enabled, StreamMaxLength in ClamAV config must be able to accommodate your
-        main "maxSize" option (not to be confused with "maxSize" in "scan" options group).
-        Final file size can't be determined before passthrough,
-        so file of all sizes will have to be scanned regardless.
-
-        This will only passthrough scan non-chunked file uploads.
-        Chunked file uploads and URL uploads will still use the default scan method.
-      */
-      clamPassthrough: false
+      }
     },
 
     /*
@@ -599,9 +602,15 @@ module.exports = {
     generateThumbs: {
       image: true,
       video: true,
+      // Generate animated thumbnails wherever applicable.
+      // For now will only work with GIF images, also depends on "image" option being enabled.
+      animated: true,
       // Placeholder defaults to 'public/images/unavailable.png'.
       placeholder: null,
-      size: 200
+      size: 200,
+      // https://github.com/fluent-ffmpeg/node-fluent-ffmpeg/tree/v2.1.2#screenshotsoptions-dirname-generate-thumbnails
+      // Only accepts a single value. Defaults to 20%.
+      videoTimemark: '20%'
     },
 
     /*
@@ -653,6 +662,15 @@ module.exports = {
         level: 1
       }
     }
+  },
+
+  /*
+    Dashboard config.
+  */
+  dashboard: {
+    uploadsPerPage: 24,
+    albumsPerPage: 10,
+    usersPerPage: 10
   },
 
   /*

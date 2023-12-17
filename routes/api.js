@@ -1,11 +1,11 @@
 const { Router } = require('hyper-express')
 const routes = new Router()
-const albumsController = require('./../controllers/albumsController')
-const authController = require('./../controllers/authController')
-const tokenController = require('./../controllers/tokenController')
-const uploadController = require('./../controllers/uploadController')
-const utilsController = require('./../controllers/utilsController')
-const config = require('./../config')
+const albums = require('./../controllers/albumsController')
+const auth = require('./../controllers/authController')
+const tokens = require('./../controllers/tokenController')
+const upload = require('./../controllers/uploadController')
+const utils = require('./../controllers/utilsController')
+const config = require('./../controllers/utils/ConfigManager')
 
 routes.get('/check', async (req, res) => {
   const obj = {
@@ -16,54 +16,83 @@ routes.get('/check', async (req, res) => {
     fileIdentifierLength: config.uploads.fileIdentifierLength,
     stripTags: config.uploads.stripTags
   }
-  if (utilsController.retentions.enabled && utilsController.retentions.periods._) {
-    obj.temporaryUploadAges = utilsController.retentions.periods._
-    obj.defaultTemporaryUploadAge = utilsController.retentions.default._
+  if (utils.retentions.enabled && utils.retentions.periods._) {
+    obj.temporaryUploadAges = utils.retentions.periods._
+    obj.defaultTemporaryUploadAge = utils.retentions.default._
   }
-  if (utilsController.clientVersion) {
-    obj.version = utilsController.clientVersion
+  if (utils.clientVersion) {
+    obj.version = utils.clientVersion
   }
 
   return res.json(obj)
 })
 
-routes.post('/login', authController.verify)
-routes.post('/register', authController.register)
-routes.post('/password/change', authController.changePassword)
-routes.get('/uploads', uploadController.list)
-routes.get('/uploads/:page', uploadController.list)
-routes.post('/upload', uploadController.upload, {
-  // HyperExpress defaults to 250kb
-  // https://github.com/kartikk221/hyper-express/blob/6.2.4/docs/Server.md#server-constructor-options
-  max_body_length: parseInt(config.uploads.maxSize) * 1e6
-})
-routes.post('/upload/delete', uploadController.delete)
-routes.post('/upload/bulkdelete', uploadController.bulkDelete)
-routes.post('/upload/finishchunks', uploadController.finishChunks)
-routes.get('/upload/get/:identifier', uploadController.get)
-routes.post('/upload/:albumid', uploadController.upload)
-routes.get('/album/get/:identifier', albumsController.get)
-routes.get('/album/zip/:identifier', albumsController.generateZip)
-routes.get('/album/:identifier', albumsController.getUpstreamCompat)
-routes.get('/album/:albumid/:page', uploadController.list)
-routes.get('/albums', albumsController.list)
-routes.get('/albums/:page', albumsController.list)
-routes.post('/albums', albumsController.create)
-routes.post('/albums/addfiles', albumsController.addFiles)
-routes.post('/albums/delete', albumsController.delete)
-routes.post('/albums/disable', albumsController.disable)
-routes.post('/albums/edit', albumsController.edit)
-routes.post('/albums/rename', albumsController.rename)
-routes.get('/albums/test', albumsController.test)
-routes.get('/tokens', tokenController.list)
-routes.post('/tokens/verify', tokenController.verify)
-routes.post('/tokens/change', tokenController.change)
-routes.get('/users', authController.listUsers)
-routes.get('/users/:page', authController.listUsers)
-routes.post('/users/create', authController.createUser)
-routes.post('/users/edit', authController.editUser)
-routes.post('/users/disable', authController.disableUser)
-routes.post('/users/delete', authController.deleteUser)
-routes.get('/stats', utilsController.stats)
+/** ./controllers/authController.js */
+
+routes.post('/login', utils.assertJSON, auth.verify)
+routes.post('/register', utils.assertJSON, auth.register)
+routes.post('/password/change', [auth.requireUser, utils.assertJSON], auth.changePassword)
+
+routes.get('/users', auth.requireUser, auth.listUsers)
+routes.get('/users/:page', auth.requireUser, auth.listUsers)
+
+routes.post('/users/create', [auth.requireUser, utils.assertJSON], auth.createUser)
+routes.post('/users/delete', [auth.requireUser, utils.assertJSON], auth.deleteUser)
+routes.post('/users/disable', [auth.requireUser, utils.assertJSON], auth.disableUser)
+routes.post('/users/edit', [auth.requireUser, utils.assertJSON], auth.editUser)
+
+/** ./controllers/uploadController.js */
+
+// HyperExpress defaults to 250kb
+// https://github.com/kartikk221/hyper-express/blob/6.4.8/docs/Server.md#server-constructor-options
+const uploadOptions = {
+  max_body_length: parseInt(config.uploads.maxSize) * 1e6,
+  middlewares: [
+    auth.optionalUser
+  ]
+}
+routes.post('/upload', uploadOptions, upload.upload)
+routes.post('/upload/:albumid', uploadOptions, upload.upload)
+routes.post('/upload/finishchunks', [auth.optionalUser, utils.assertJSON], upload.finishChunks)
+
+routes.get('/uploads', auth.requireUser, upload.list)
+routes.get('/uploads/:page', auth.requireUser, upload.list)
+routes.get('/album/:albumid/:page', auth.requireUser, upload.list)
+
+routes.get('/upload/get/:identifier', auth.requireUser, upload.get)
+routes.post('/upload/delete', [auth.requireUser, utils.assertJSON], upload.delete)
+routes.post('/upload/bulkdelete', [auth.requireUser, utils.assertJSON], upload.bulkDelete)
+
+/** ./controllers/albumsController.js */
+
+routes.get('/albums', auth.requireUser, albums.list)
+routes.get('/albums/:page', auth.requireUser, albums.list)
+
+routes.get('/album/get/:identifier', albums.get)
+routes.get('/album/zip/:identifier', albums.generateZip)
+routes.get('/album/:identifier', albums.getUpstreamCompat)
+
+routes.post('/albums', [auth.requireUser, utils.assertJSON], albums.create)
+routes.post('/albums/addfiles', [auth.requireUser, utils.assertJSON], albums.addFiles)
+routes.post('/albums/delete', [auth.requireUser, utils.assertJSON], albums.delete)
+routes.post('/albums/disable', [auth.requireUser, utils.assertJSON], albums.disable)
+routes.post('/albums/edit', [auth.requireUser, utils.assertJSON], albums.edit)
+routes.post('/albums/rename', [auth.requireUser, utils.assertJSON], albums.rename)
+
+/** ./controllers/tokenController.js **/
+
+routes.get('/tokens', auth.requireUser, tokens.list)
+routes.post('/tokens/change', (req, res, next) => {
+  auth.requireUser(req, res, next, {
+    // Include user's "token" field into database query
+    fields: ['token']
+  })
+}, tokens.change)
+routes.post('/tokens/verify', utils.assertJSON, tokens.verify)
+
+/** ./controllers/utilsController.js */
+
+routes.get('/stats', [auth.requireUser], utils.stats)
+routes.get('/stats/:category', [auth.requireUser], utils.statsCategory)
 
 module.exports = routes

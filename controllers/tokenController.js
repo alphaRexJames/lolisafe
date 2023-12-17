@@ -1,4 +1,5 @@
 const randomstring = require('randomstring')
+const { RateLimiterMemory } = require('rate-limiter-flexible')
 const perms = require('./permissionController')
 const utils = require('./utilsController')
 const ClientError = require('./utils/ClientError')
@@ -9,7 +10,13 @@ const self = {
   tokenLength: 64,
   tokenMaxTries: 3,
 
-  onHold: new Set() // temporarily held random tokens
+  onHold: new Set(), // temporarily held random tokens
+
+  // Maximum of 6 auth failures in 10 minutes
+  authFailuresRateLimiter: new RateLimiterMemory({
+    points: 6,
+    duration: 10 * 60
+  })
 }
 
 self.getUniqueToken = async res => {
@@ -63,16 +70,18 @@ self.unholdTokens = res => {
 }
 
 self.verify = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-
-  // Parse POST body
-  req.body = await req.json()
-
   const token = typeof req.body.token === 'string'
     ? req.body.token.trim()
     : ''
 
-  if (!token) throw new ClientError('No token provided.', { statusCode: 403 })
+  if (!token) {
+    throw new ClientError('No token provided.', { statusCode: 403 })
+  }
+
+  const rateLimiterRes = await self.authFailuresRateLimiter.get(req.ip)
+  if (rateLimiterRes && rateLimiterRes.remainingPoints <= 0) {
+    throw new ClientError('Too many auth failures. Try again in a while.', { statusCode: 429 })
+  }
 
   const user = await utils.db.table('users')
     .where('token', token)
@@ -80,6 +89,8 @@ self.verify = async (req, res) => {
     .first()
 
   if (!user) {
+    // Rate limit attempts with invalid token
+    await self.authFailuresRateLimiter.consume(req.ip, 1)
     throw new ClientError('Invalid token.', { statusCode: 403, code: 10001 })
   }
 
@@ -106,17 +117,14 @@ self.verify = async (req, res) => {
 }
 
 self.list = async (req, res) => {
-  const user = await utils.authorize(req)
-  return res.json({ success: true, token: user.token })
+  return res.json({ success: true, token: req.locals.user.token })
 }
 
 self.change = async (req, res) => {
-  const user = await utils.authorize(req, 'token')
-
   const newToken = await self.getUniqueToken(res)
 
   await utils.db.table('users')
-    .where('token', user.token)
+    .where('token', req.locals.user.token)
     .update({
       token: newToken,
       timestamp: Math.floor(Date.now() / 1000)

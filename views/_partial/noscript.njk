@@ -7,7 +7,7 @@
         </p>
         {% if noscriptMessage or (noscriptMessage === null) -%}
         {{ noscriptMessage | safe }}
-        {%- else -%}
+        {%- elif config.routes.nojs -%}
         <p>If you are not automatically redirected to our No-JS uploader, <a href="nojs">click here</a>.</p>
         {%- endif %}
       </div>

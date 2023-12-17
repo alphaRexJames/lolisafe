@@ -108,7 +108,20 @@ const page = {
   fadingIn: null,
 
   albumTitleMaxLength: 70,
-  albumDescMaxLength: 4000
+  albumDescMaxLength: 4000,
+
+  // Better Cloudflare errors
+  cloudflareErrors: {
+    520: 'Unknown Error',
+    521: 'Web Server Is Down',
+    522: 'Connection Timed Out',
+    523: 'Origin Is Unreachable',
+    524: 'A Timeout Occurred',
+    525: 'SSL Handshake Failed',
+    526: 'Invalid SSL Certificate',
+    527: 'Railgun Error',
+    530: 'Origin DNS Error'
+  }
 }
 
 page.unhide = () => {
@@ -134,22 +147,11 @@ page.onError = error => {
 
 // Handler for Axios errors
 page.onAxiosError = error => {
-  console.error(error)
-
-  // Better Cloudflare errors
-  const cloudflareErrors = {
-    520: 'Unknown Error',
-    521: 'Web Server Is Down',
-    522: 'Connection Timed Out',
-    523: 'Origin Is Unreachable',
-    524: 'A Timeout Occurred',
-    525: 'SSL Handshake Failed',
-    526: 'Invalid SSL Certificate',
-    527: 'Railgun Error',
-    530: 'Origin DNS Error'
+  if (!error.response) {
+    return page.onError(error)
   }
 
-  const statusText = cloudflareErrors[error.response.status] || error.response.statusText
+  const statusText = page.cloudflareErrors[error.response.status] || error.response.statusText
   const description = error.response.data && error.response.data.description
     ? error.response.data.description
     : 'There was an error with the request.\nPlease check the console for more information.'
@@ -196,11 +198,7 @@ page.verifyToken = token => {
     page.permissions = response.data.permissions
     page.prepareDashboard()
   }).catch(error => {
-    return swal({
-      title: 'An error occurred!',
-      text: error.response.data ? error.response.data.description : error.toString(),
-      icon: 'error'
-    }).then(() => {
+    return page.onAxiosError(error).then(() => {
       if (error.response.data && error.response.data.code === 10001) {
         localStorage.removeItem(lsKeys.token)
         window.location = 'auth'
@@ -373,11 +371,19 @@ page.domClick = event => {
       return page.bulkDeleteUploads()
     case 'display-preview':
       return page.displayPreview(id)
-    // Manage uploads
     case 'upload-filters-help':
       return page.uploadFiltersHelp(element)
     case 'filter-uploads':
       return page.filterUploads(element)
+    case 'sort-uploads':
+      return page.sortUploads(element)
+    // Statistics
+    case 'reload-stats-category':
+      return page.reloadStatsCategory(element)
+    case 'filter-uploads-with':
+      return page.filterUploadsWith(element)
+    case 'filter-uploads-by-type':
+      return page.filterUploadsByType(element)
     // Manage your albums
     case 'submit-album':
       return page.submitAlbum(element)
@@ -400,16 +406,17 @@ page.domClick = event => {
       return page.deleteUser(id)
     case 'view-user-uploads':
       return page.viewUserUploads(id, element)
-    // Others
+    // Manage your token
     case 'get-new-token':
       return page.getNewToken(element)
-    // Uploads & Users
+    // Shared (uploads, albums, users)
     case 'clear-selection':
       return page.clearSelection()
     case 'select':
       return page.select(element, event)
     case 'select-all':
       return page.selectAll(element)
+    // Shared pagination (uploads, albums, users)
     case 'page-ellipsis':
       return page.focusJumpToPage(element)
     case 'page-prev':
@@ -420,22 +427,23 @@ page.domClick = event => {
   }
 }
 
-page.fadeInDom = disableFading => {
-  if (page.fadingIn) {
-    clearTimeout(page.fadingIn)
-    page.dom.classList.remove('fade-in')
+page.fadeIn = (element = page.dom, disableFading = false) => {
+  if (element._fadeInTimeout) {
+    clearTimeout(element._fadeInTimeout)
+    element.classList.remove('anim-fade-in')
   }
 
   if (!disableFading) {
-    page.dom.classList.add('fade-in')
-    page.fadingIn = setTimeout(() => {
-      page.dom.classList.remove('fade-in')
+    element.classList.add('anim-fade-in')
+    element._fadeInTimeout = setTimeout(() => {
+      element.classList.remove('anim-fade-in')
+      delete element._fadeInTimeout
     }, 500)
   }
 }
 
-page.scrollToDom = disableSmooth => {
-  page.dom.scrollIntoView({
+page.scrollTo = (element = page.dom, disableSmooth = false) => {
+  element.scrollIntoView({
     behavior: disableSmooth ? 'auto' : 'smooth',
     block: 'start',
     inline: 'nearest'
@@ -529,7 +537,7 @@ page.getUploads = (params = {}) => {
   if (params.filters) {
     headers.filters = params.filters
     // Send client timezone offset if properly using date: and/or :expiry filters
-    // Server will pretend client is on UTC if unset
+    // Server will assume client is on UTC if unset
     if (/(^|\s)(date|expiry):[\d"]/.test(params.filters)) {
       headers.minoffset = new Date().getTimezoneOffset()
     }
@@ -545,7 +553,8 @@ page.getUploads = (params = {}) => {
       }
     }
 
-    const pages = Math.ceil(response.data.count / 25)
+    const uploadsPerPage = response.data.uploadsPerPage || 25
+    const pages = Math.ceil(response.data.count / uploadsPerPage)
     const files = response.data.files
     if (params.pageNum && (files.length === 0)) {
       page.updateTrigger(params.trigger)
@@ -564,8 +573,10 @@ page.getUploads = (params = {}) => {
     const users = response.data.users
     const basedomain = response.data.basedomain
 
-    if (params.pageNum < 0) params.pageNum = Math.max(0, pages + params.pageNum)
-    const pagination = page.paginate(response.data.count, 25, params.pageNum)
+    if (params.pageNum < 0) {
+      params.pageNum = Math.max(0, pages + params.pageNum)
+    }
+    const pagination = page.paginate(response.data.count, uploadsPerPage, params.pageNum)
 
     const filter = `
       <div class="column">
@@ -673,8 +684,9 @@ page.getUploads = (params = {}) => {
     // Whether there are any unselected items
     let unselected = false
 
-    const showOriginalNames = page.views[page.currentView].originalNames
+    const filterAllByAlbums = params.all && params.filters && params.filters.includes('albumid:')
     const hasExpiryDateColumn = files.some(file => typeof file.expirydate !== 'undefined')
+    const showOriginalNames = page.views[page.currentView].originalNames
 
     for (let i = 0; i < files.length; i++) {
       // Build full URLs
@@ -709,8 +721,14 @@ page.getUploads = (params = {}) => {
       }
 
       // Prettify
+      files[i].prettyAlbum = (albums && files[i].albumid && albums[files[i].albumid])
+        ? `[${files[i].albumid}] ${albums[files[i].albumid]}` || ''
+        : ''
       files[i].prettyBytes = page.getPrettyBytes(parseInt(files[i].size))
       files[i].prettyDate = page.getPrettyDate(new Date(files[i].timestamp * 1000))
+      files[i].prettyUser = (users && files[i].userid && users[files[i].userid])
+        ? users[files[i].userid]
+        : ''
 
       if (hasExpiryDateColumn) {
         files[i].prettyExpiryDate = files[i].expirydate
@@ -720,17 +738,8 @@ page.getUploads = (params = {}) => {
 
       // Update selected status
       files[i].selected = page.selected[page.currentView].includes(files[i].id)
-      if (!files[i].selected) unselected = true
-
-      // Appendix (display album or user)
-      if (params.all) {
-        files[i].appendix = files[i].userid
-          ? users[files[i].userid] || ''
-          : ''
-      } else if (typeof params.album === 'undefined') {
-        files[i].appendix = files[i].albumid
-          ? albums[files[i].albumid] || ''
-          : ''
+      if (!files[i].selected) {
+        unselected = true
       }
     }
 
@@ -750,14 +759,22 @@ page.getUploads = (params = {}) => {
 
       for (let i = 0; i < files.length; i++) {
         const upload = files[i]
+        let appendix = ''
+        if (params.all) {
+          appendix += upload.prettyUser ? `<span>${upload.prettyUser}</span> \u2013 ` : ''
+        }
+        if (!params.all || filterAllByAlbums) {
+          appendix += upload.prettyAlbum ? `<span>${upload.prettyAlbum}</span> \u2013 ` : ''
+        }
+
         const div = document.createElement('div')
         div.className = 'image-container column'
         div.dataset.id = upload.id
 
-        if (typeof upload.thumb !== 'undefined') {
-          div.innerHTML = `<a class="image" href="${upload.file}" target="_blank"><img alt="${upload.name}" data-src="${upload.thumb}"/></a>`
-        } else {
+        if (typeof upload.thumb === 'undefined') {
           div.innerHTML = `<a class="image" href="${upload.file}" target="_blank"><h1 class="title">${upload.extname || 'N/A'}</h1></a>`
+        } else {
+          div.innerHTML = `<a class="image" href="${upload.file}" target="_blank"><img alt="${upload.name}" data-src="${upload.thumb}"/></a>`
         }
 
         div.innerHTML += `
@@ -794,7 +811,7 @@ page.getUploads = (params = {}) => {
           <div class="details">
             <p class="name" title="${upload.file}">${upload.name}</p>
             ${showOriginalNames ? `<p class="originalname" title="${upload.original}">${upload.original}</p>` : ''}
-            <p class="prettybytes" data-bytes="${upload.size}">${upload.appendix ? `<span>${upload.appendix}</span> – ` : ''}${upload.prettyBytes}</p>
+            <p class="prettybytes" data-bytes="${upload.size}">${appendix}${upload.prettyBytes}</p>
             ${hasExpiryDateColumn && upload.prettyExpiryDate
               ? `<p class="prettyexpirydate"${upload.expirydate ? ` data-timestamp="${upload.expirydate}"` : ''}>EXP: ${upload.prettyExpiryDate}</p>`
               : ''}
@@ -805,7 +822,6 @@ page.getUploads = (params = {}) => {
         page.checkboxes = table.querySelectorAll('.checkbox[data-action="select"]')
       }
     } else {
-      const allAlbums = params.all && params.filters && params.filters.includes('albumid:')
       page.dom.innerHTML = `
         ${pagination}
         ${extraControls}
@@ -815,14 +831,14 @@ page.getUploads = (params = {}) => {
             <thead>
               <tr>
                 <th class="controls"><input id="selectAll" class="checkbox" type="checkbox" title="Select all" data-action="select-all"></th>
-                <th title="Key: name">File name</th>
-                ${showOriginalNames ? '<th title="Key: original">Original name</th>' : ''}
-                ${typeof params.album === 'undefined' ? `<th title="Key: ${params.all ? 'userid">User' : 'albumid">Album'}</th>` : ''}
-                ${allAlbums ? '<th title="Key: albumid">Album</th>' : ''}
-                <th title="Key: size">Size</th>
-                ${params.all ? '<th title="Key: ip">IP</th>' : ''}
-                <th title="Key: timestamp">Upload date</th>
-                ${hasExpiryDateColumn ? '<th title="Key: expirydate">Expiry date</th>' : ''}
+                <th title="Key: name" data-action="sort-uploads">File name</th>
+                ${showOriginalNames ? '<th title="Key: original" data-action="sort-uploads">Original name</th>' : ''}
+                ${params.all ? '<th title="Key: userid" data-action="sort-uploads">User</th>' : ''}
+                ${!params.all || filterAllByAlbums ? '<th title="Key: albumid" data-action="sort-uploads">Album</th>' : ''}
+                <th title="Key: size" data-action="sort-uploads" data-default-sort="desc">Size</th>
+                ${params.all ? '<th title="Key: ip" data-action="sort-uploads">IP</th>' : ''}
+                <th title="Key: timestamp" data-action="sort-uploads">Upload date</th>
+                ${hasExpiryDateColumn ? '<th title="Key: expirydate" data-action="sort-uploads">Expiry date</th>' : ''}
                 <th class="has-text-right">(${response.data.count} total)</th>
               </tr>
             </thead>
@@ -839,14 +855,15 @@ page.getUploads = (params = {}) => {
 
       for (let i = 0; i < files.length; i++) {
         const upload = files[i]
+
         const tr = document.createElement('tr')
         tr.dataset.id = upload.id
         tr.innerHTML = `
           <td class="controls"><input type="checkbox" class="checkbox" title="Select" data-index="${i}" data-action="select"${upload.selected ? ' checked' : ''}></td>
           <th class="name"><a href="${upload.file}" target="_blank" title="${upload.file}">${upload.name}</a></th>
           ${showOriginalNames ? `<th class="originalname" title="${upload.original}">${upload.original}</th>` : ''}
-          ${typeof params.album === 'undefined' ? `<th class="appendix">${upload.appendix}</th>` : ''}
-          ${allAlbums ? `<th class="album">${upload.albumid ? (albums[upload.albumid] || '') : ''}</th>` : ''}
+          ${params.all ? `<th class="appendix">${upload.prettyUser}</th>` : ''}
+          ${!params.all || filterAllByAlbums ? `<th class="album">${upload.prettyAlbum}</th>` : ''}
           <td class="prettybytes" data-bytes="${upload.size}">${upload.prettyBytes}</td>
           ${params.all ? `<td class="ip">${upload.ip || ''}</td>` : ''}
           <td class="prettydate" data-timestamp="${upload.timestamp}">${upload.prettyDate}</td>
@@ -888,19 +905,19 @@ page.getUploads = (params = {}) => {
     }
 
     const selectAll = document.querySelector('#selectAll')
-    if (selectAll && !unselected && files.length) {
+    if (files.length && selectAll && !unselected) {
       selectAll.checked = true
       selectAll.title = 'Unselect all'
     }
 
-    page.fadeInDom()
+    page.fadeIn(page.dom)
 
     const pageNum = files.length ? params.pageNum : 0
     if (params.forceScroll ||
       page.prevPageNums[page.currentView] === null ||
       page.prevPageNums[page.currentView] !== pageNum) {
       const disableSmooth = !params.forceScroll && page.views[page.currentView].type === 'thumbs'
-      page.scrollToDom(disableSmooth)
+      page.scrollTo(page.dom, disableSmooth)
     }
 
     if (page.views[page.currentView].type === 'thumbs') {
@@ -925,7 +942,7 @@ page.setUploadsView = (view, element) => {
 
   if (view === 'list') {
     delete localStorage[lsKeys.viewType[page.currentView]]
-    page.views[page.currentView].type = undefined
+    page.views[page.currentView].type = void 0
   } else {
     localStorage[lsKeys.viewType[page.currentView]] = view
     page.views[page.currentView].type = view
@@ -1137,61 +1154,69 @@ page.uploadFiltersHelp = element => {
   content.style = 'text-align: left'
   content.innerHTML = `${all
     ? `There are 2 filter keys, namely <b>user</b> (username) and <b>ip</b>.
-    These keys can be specified more than once.
+    <b>user</b> and <b>ip</b> keys can be specified more than once.
     For usernames with whitespaces, wrap them with double quotes (<code>"</code>).
-    Special cases such as uploads by non-registered users or have no IPs respectively, use <code>user:-</code> or <code>ip:-</code>.
+    To match uploads by non-registered users, or have no IPs respectively, use <code>user:-</code> or <code>ip:-</code>.
 
-    To exclude certain users/ips while still listing every other uploads, add negation sign (<code>-</code>) before the keys.
-    Negation sign can also be used to exclude the special cases mentioned above (i.e. <code>-user:-</code> or <code>-ip:-</code>).
+    To exclude certain users/IPs while still listing every other uploads, add negation sign (<code>-</code>) before the keys.
+    Negation signs can also be used to exclude uploads by non-registered users, or have no IPs (i.e. <code>-user:-</code> or <code>-ip:-</code>).
 
     If you know the ID of a user's album, you can list its uploads with <b>albumid</b> key.
     Negation sign works for this key as well.`
     : `There is only 1 filter key, namely <b>albumid</b>.
-    This key can be specified more than once.
-    Special case such as uploads with no albums, use <code>albumid:-</code>.
+    <b>albumid</b> key can be specified more than once.
+    To match uploads with no albums, use <code>albumid:-</code>.
 
     To exclude certain albums while still listing every other uploads, add negation sign (<code>-</code>) before the keys.
-    Negation sign can also be used to exclude the special case mentioned above (i.e. <code>-albumid:-</code>).`}
+    Negation sign can also be used to exclude uploads with no albums (i.e. <code>-albumid:-</code>).`}
 
     There are 2 range keys: <b>date</b> (upload date) and <b>expiry</b> (expiry date).
-    Their format is: <code>"YYYY/MM/DD HH:MM:SS-YYYY/MM/DD HH:MM:SS"</code> ("from" date and "to" date respectively).
-    You may specify only one of the dates.
+    Their formats are: <code>"YYYY/MM/DD HH:MM:SS-YYYY/MM/DD HH:MM:SS"</code> ("from" date and "to" date respectively),
+    unix timestamps in seconds resolution, OR human-readable relative time duration (<a href="https://github.com/jkroso/parse-duration/tree/50ebcc8a971c753bd1162332ccf5f3ef1e0b3a7e#available-unit-types-are" target="_blank" rel="noopener">available units</a>).
+    You may choose to specify only either dates.
     If "to" date is missing, 'now' will be used. If "from" date is missing, 'beginning of time' will be used.
     If any of the subsequent date or time units are not specified, their first value will be used (e.g. January for month, 1 for day, and so on).
     If only time is specified, today's date will be used.
     If you do not need to specify both date and time, you may omit the double quotes.
-    In conclusion, the following examples are all valid: <code>date:"2020/01/01 01:23-2018/01/01 06"</code>, <code>expiry:-2020/05</code>, <code>date:12:34:56</code>.
-    These keys can only be specified once each.
+    In conclusion, the following examples are all valid: <code>date:"2020/01/01 01:23-2018/01/01 06"</code>, <code>expiry:-2020/05</code>, <code>date:12:34:56</code>, <code>date:1663976000</code>, <code>date:<7days</code>.
+    <b>date</b> and <b>expiry</b> keys can only be specified once each.
 
-    <b>Timezone?</b> Feel free to query the dates with your own timezone.
+    <b>What about timezones?</b>
+    Feel free to query the dates in your own timezone.
     API requests to the filter endpoint will attach your browser's timezone offset, so the server will automatically calculate timezone differences.
 
     Matches can also be sorted with <b>sort</b> keys.
-    Their formats are: <code>sort:columnName[:d[escending]]</code>, where <code>:d[escending]</code> is an optional tag to set the direction to descending.
+    Their format is: <code>sort:columnName[:d[escending]]</code>, where <code>:d[escending]</code> is an optional tag to set the direction to descending.
     This key must be used with internal column names used in the database (<code>id</code>, <code>${all ? 'userid' : 'albumid'}</code>, and so on),
     but there are 2 shortcuts available: <b>date</b> for <code>timestamp</code> column and <b>expiry</b> for <code>expirydate</code> column.
-    This key can also be specified more than once, where their order will decide the sorting steps.
+    Set your uploads view to "List view", then hover any of the table's column headers to see tooltips displaying their internal column names.
+    <b>sort</b> key can be specified more than once, where their order will decide the sorting steps.
 
     Finally, there are type-<b>is</b> keys to refine by types.
     You can use <code>is:image</code>, <code>is:video</code>, and <code>is:audio</code> to list images, videos, audios respectively.
     This will only use image, video and audio extensions that are whitelisted internally in the safe.
     For images and videos specifically, they will be the ones whose thumbnails can be generated by the safe.
     Negation sign works for this key as well.
-    Mixing inclusion and exclusion is not allowed (i.e. <code>is:image -is:video</code>, since the second key is redundant).
+    Mixing inclusion and exclusion is not allowed (i.e. <code>is:image -is:video</code>), since the second key will be redundant.
 
-    Any leftover keywords which do not use keys (non-keyed keywords) will be matched against the matches' file names.
+    Alternatively, you can filter by their actual mime types using <b>type</b> keys.
+    For example, <code>type:image/jpeg</code>, <code>type:video/mp4</code>.
+    Negation sign works for this key as well.
+
+    Any leftover keywords which do not use keys (non-keyed keywords) will be matched against the matches' randomly generated and original names.
     Excluding certain keywords is also supported by adding negation sign before the keywords.
 
     <b>Internal steps:</b>
     ${all
       ? `- Query uploads passing ALL exclusion filter keys OR matching ANY filter keys, if any.
     - Refine matches`
-      : '- Filter uploads'} using date key, if any.
-    - Refine matches using expiry key, if any.
-    - Refine matches using type-is keys, if any.
+      : '- Filter uploads'} using <b>date</b> key, if any.
+    - Refine matches using <b>expiry</b> key, if any.
+    - Refine matches using type-<b>is</b> keys, if any.
+    - Refine matches using <b>type</b> keys, if any.
     - Refine matches using ANY non-keyed keywords, if any.
     - Filter matches using ALL exclusion non-keyed keywords, if any.
-    - Sort matches using sorting keys, if any.
+    - Sort matches using <b>sort</b> keys, if any.
 
     <b>Examples:</b>
     ${all
@@ -1212,6 +1237,12 @@ page.uploadFiltersHelp = element => {
     <code>date:"2020/04/07 12-2020/04/07 23:59:59"</code>
     - Uploads uploaded before "5 February 2020 00:00:00":
     <code>date:-2020/02/05</code>
+    - Uploads uploaded within the last 24 hours (1 day):
+    <code>date:<1d</code>
+    - Uploads uploaded before the last 6 months:
+    <code>date:>6months</code>
+    - Uploads that will expire within the next 7 days and 12 hours:
+    <code>expiry:"<7 days 12 hours"</code>
     - Uploads which file names match "*.gz" but NOT "*.tar.gz":
     <code>*.gz -*.tar.gz</code>
     - Sort matches by "size" column in ascending and descending order respectively:
@@ -1232,27 +1263,128 @@ page.uploadFiltersHelp = element => {
   document.body.querySelector('.swal-overlay .swal-modal:not(.is-expanded)').classList.add('is-expanded')
 }
 
-page.filterUploads = element => {
-  const filters = document.querySelector(`#${element.dataset.filtersid || 'filters'}`).value
+page.uniquifyUploadsFilters = string => {
+  const filters = string
     .trim()
     .replace(/\t/g, ' ')
-    .replace(/(^|\s)((albumid|ip|user|date|expiry|is|sort|orderby):)\s+/g, '$2')
+    .replace(/(^|\s)((albumid|ip|user|date|expiry|is|sort|orderby):)\s+/gi, '$2')
+  const filtersArray = filters.split(' ')
+
+  const uniquified = filtersArray
+    .filter((v, i, a) => {
+      // Filter out invalid values
+      if (!v) return false
+
+      const match = v.match(/^(sort|orderby):(\w+)(:.*)?$/i)
+      // Uniquify sort/orderby filters by their keys
+      if (match && match[2]) {
+        const lastIndex = a.findLastIndex(v => {
+          return new RegExp(`^(sort|orderby):${match[2]}(:.*)?$`, 'i').test(v)
+        })
+        return lastIndex === i
+      }
+      // Uniquify other filters by exact string matches
+      return i === a.lastIndexOf(v)
+    })
+
+  return uniquified
+}
+
+page.filterUploads = element => {
+  const filters = document.querySelector(`#${element.dataset.filtersid || 'filters'}`).value
+  const filtersArray = page.uniquifyUploadsFilters(filters)
+
   // eslint-disable-next-line compat/compat
   page.getUploads(Object.assign(page.views[page.currentView], {
-    filters,
+    filters: filtersArray.join(' '),
     pageNum: 0,
     trigger: element
   }))
 }
 
+page.sortUploads = element => {
+  const title = element.title
+  if (!title) return
+
+  const _match = title.match(/^key: (.*)$/i)
+  if (!_match || !_match[1]) return
+
+  const defaultSort = element.dataset.defaultSort || 'asc'
+  const regex = new RegExp(`^(sort|orderby):(${_match[1]})(:.*)?$`, 'i')
+
+  const filters = document.querySelector('#filters').value
+  const filtersArray = page.uniquifyUploadsFilters(filters)
+
+  let direction = defaultSort
+  const cleaned = filtersArray
+    .filter((v, i, a) => {
+      const match = v.match(regex)
+      // Filter out sort filter(s) with the same key
+      if (match && match[2]) {
+        // Inverse sorting direction if required
+        if (match[3]) {
+          if (/^:d/i.test(match[3])) {
+            direction = 'asc'
+          } else {
+            direction = 'desc'
+          }
+        }
+        return false
+      }
+      return true
+    })
+
+  // Insert new sort filter
+  cleaned.push(`sort:${_match[1]}:${direction}`)
+
+  // eslint-disable-next-line compat/compat
+  page.getUploads(Object.assign(page.views[page.currentView], {
+    filters: cleaned.join(' '),
+    pageNum: 0,
+    trigger: element
+  }))
+}
+
+page.filterUploadsWith = element => {
+  const actionData = (element.dataset.actionData || '')
+  const filtersArray = page.uniquifyUploadsFilters(actionData)
+
+  page.getUploads({
+    all: true,
+    filters: filtersArray.join(' '),
+    pageNum: 0,
+    trigger: document.querySelector('#itemManageUploads')
+  })
+}
+
+page.filterUploadsByType = element => {
+  const text = element.innerText.trim()
+  if (!text) return
+
+  // Wrap type in quotes if it contains whitespaces
+  const type = /\s/.test(text)
+    ? `"${text}"`
+    : text
+
+  page.getUploads({
+    all: true,
+    filters: `type:${type}`,
+    pageNum: 0,
+    trigger: document.querySelector('#itemManageUploads')
+  })
+}
+
 page.viewUserUploads = (id, element) => {
   const user = page.cache[id]
   if (!user) return
+
   element.classList.add('is-loading')
+
   // Wrap username in quotes if it contains whitespaces
-  const username = user.username.includes(' ')
+  const username = /\s/.test(user.username)
     ? `"${user.username}"`
     : user.username
+
   page.getUploads({
     all: true,
     filters: `user:${username}`,
@@ -1262,9 +1394,12 @@ page.viewUserUploads = (id, element) => {
 
 page.viewAlbumUploads = (id, element) => {
   if (!page.cache[id]) return
+
   element.classList.add('is-loading')
+
   // eslint-disable-next-line compat/compat
   const all = page.currentView === 'albumsAll' && page.permissions.moderator
+
   page.getUploads({
     all,
     filters: `albumid:${id}`,
@@ -1303,7 +1438,9 @@ page.deleteUpload = id => {
 
 page.bulkDeleteUploads = () => {
   const count = page.selected[page.currentView].length
-  if (!count) return swal('An error occurred!', 'You have not selected any uploads.', 'error')
+  if (!count) {
+    return swal('An error occurred!', 'You have not selected any uploads.', 'error')
+  }
 
   page.postBulkDeleteUploads({
     all: page.currentView === 'uploadsAll',
@@ -1361,8 +1498,8 @@ page.deleteUploadsByNames = (params = {}) => {
       </div>
     </form>
   `
-  page.fadeInDom()
-  page.scrollToDom()
+  page.fadeIn(page.dom)
+  page.scrollTo(page.dom)
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#submitBulkDelete').addEventListener('click', () => {
@@ -1615,7 +1752,8 @@ page.getAlbums = (params = {}) => {
       }
     }
 
-    const pages = Math.ceil(response.data.count / 25)
+    const albumsPerPage = response.data.albumsPerPage || 25
+    const pages = Math.ceil(response.data.count / albumsPerPage)
     const albums = response.data.albums
     if (params.pageNum && (albums.length === 0)) {
       page.updateTrigger(params.trigger)
@@ -1633,8 +1771,10 @@ page.getAlbums = (params = {}) => {
     const users = response.data.users
     const homeDomain = response.data.homeDomain || window.location.origin
 
-    if (params.pageNum < 0) params.pageNum = Math.max(0, pages + params.pageNum)
-    const pagination = page.paginate(response.data.count, 25, params.pageNum)
+    if (params.pageNum < 0) {
+      params.pageNum = Math.max(0, pages + params.pageNum)
+    }
+    const pagination = page.paginate(response.data.count, albumsPerPage, params.pageNum)
 
     const filter = `
       <div class="column">
@@ -1793,7 +1933,9 @@ page.getAlbums = (params = {}) => {
       const albumUrl = homeDomain + albumUrlText
 
       const selected = page.selected[page.currentView].includes(album.id)
-      if (!selected) unselected = true
+      if (!selected) {
+        unselected = true
+      }
 
       // Prettify
       album.hasZip = album.zipSize !== null
@@ -1869,18 +2011,18 @@ page.getAlbums = (params = {}) => {
     }
 
     const selectAll = document.querySelector('#selectAll')
-    if (selectAll && !unselected) {
+    if (albums.length && selectAll && !unselected) {
       selectAll.checked = true
       selectAll.title = 'Unselect all'
     }
 
-    page.fadeInDom()
+    page.fadeIn(page.dom)
 
     const pageNum = albums.length ? params.pageNum : 0
     if (params.forceScroll ||
       page.prevPageNums[page.currentView] === null ||
       page.prevPageNums[page.currentView] !== pageNum) {
-      page.scrollToDom()
+      page.scrollTo(page.dom)
     }
 
     page.updateTrigger(params.trigger, 'active')
@@ -2250,8 +2392,8 @@ page.changeToken = (params = {}) => {
       </div>
     </div>
   `
-  page.fadeInDom()
-  page.scrollToDom()
+  page.fadeIn(page.dom)
+  page.scrollTo(page.dom)
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#getNewToken').addEventListener('click', event => {
@@ -2316,8 +2458,8 @@ page.changePassword = (params = {}) => {
       </div>
     </form>
   `
-  page.fadeInDom()
-  page.scrollToDom()
+  page.fadeIn(page.dom)
+  page.scrollTo(page.dom)
   page.updateTrigger(params.trigger, 'active')
 
   document.querySelector('#sendChangePassword').addEventListener('click', event => {
@@ -2386,7 +2528,8 @@ page.getUsers = (params = {}) => {
       }
     }
 
-    const pages = Math.ceil(response.data.count / 25)
+    const usersPerPage = response.data.usersPerPage || 25
+    const pages = Math.ceil(response.data.count / usersPerPage)
     const users = response.data.users
     if (params.pageNum && (users.length === 0)) {
       page.updateTrigger(params.trigger)
@@ -2401,8 +2544,10 @@ page.getUsers = (params = {}) => {
     page.currentView = 'users'
     page.cache = {}
 
-    if (params.pageNum < 0) params.pageNum = Math.max(0, pages + params.pageNum)
-    const pagination = page.paginate(response.data.count, 25, params.pageNum)
+    if (params.pageNum < 0) {
+      params.pageNum = Math.max(0, pages + params.pageNum)
+    }
+    const pagination = page.paginate(response.data.count, usersPerPage, params.pageNum)
 
     const filter = `
       <div class="column">
@@ -2528,7 +2673,9 @@ page.getUsers = (params = {}) => {
     for (let i = 0; i < users.length; i++) {
       const user = users[i]
       const selected = page.selected[page.currentView].includes(user.id)
-      if (!selected) unselected = true
+      if (!selected) {
+        unselected = true
+      }
 
       let displayGroup = null
       const groups = Object.keys(user.groups)
@@ -2592,18 +2739,18 @@ page.getUsers = (params = {}) => {
     }
 
     const selectAll = document.querySelector('#selectAll')
-    if (selectAll && !unselected) {
+    if (users.length && selectAll && !unselected) {
       selectAll.checked = true
       selectAll.title = 'Unselect all'
     }
 
-    page.fadeInDom()
+    page.fadeIn(page.dom)
 
     const pageNum = users.length ? params.pageNum : 0
     if (params.forceScroll ||
       page.prevPageNums[page.currentView] === null ||
       page.prevPageNums[page.currentView] !== pageNum) {
-      page.scrollToDom()
+      page.scrollTo(page.dom)
     }
 
     page.updateTrigger(params.trigger, 'active')
@@ -2985,6 +3132,166 @@ page.paginate = (totalItems, itemsPerPage, currentPage) => {
   `
 }
 
+page.buildStatisticTable = (title, stats) => {
+  const meta = []
+  let statsKey = ''
+  let rows = ''
+
+  if (!stats) {
+    rows += `
+      <tr>
+        <td>Still being generated, please try again later\u2026</td>
+        <td></td>
+      </tr>
+    `
+  } else {
+    try {
+      const keys = Object.keys(stats)
+
+      for (let j = 0; j < keys.length; j++) {
+        // Skip meta
+        if (keys[j] === 'meta') {
+          continue
+        }
+
+        const data = stats[keys[j]]
+        const isDataObj = typeof data === 'object' && data
+
+        const type = (isDataObj && data.type) || 'auto'
+        // Skip hidden
+        if (type === 'hidden') {
+          continue
+        }
+
+        const value = isDataObj ? data.value : data
+        let parsed = void 0
+
+        switch (type) {
+          case 'byte':
+            parsed = page.getPrettyBytes(value)
+            break
+          case 'byteUsage': {
+            if (typeof value === 'object') {
+              // Reasoning: https://github.com/sebhildebrandt/systeminformation/issues/464#issuecomment-756406053
+              const totalForPercentage = typeof value.available !== 'undefined'
+                ? (value.used + value.available)
+                : value.total
+              parsed = `${page.getPrettyBytes(value.used)} / ${page.getPrettyBytes(value.total)} (${(value.used / totalForPercentage * 100).toFixed(2)}%)`
+            } else {
+              parsed = value
+            }
+            break
+          }
+          case 'detailed':
+            parsed = `
+              <table class="table is-narrow is-fullwidth is-hoverable">
+                <tbody>
+                  ${Object.keys(value).map(type => {
+                    let detailedValue = void 0
+                    switch (typeof value[type]) {
+                      case 'number':
+                        detailedValue = value[type].toLocaleString()
+                        break
+                      default:
+                        detailedValue = value[type]
+                    }
+                    return `
+                      <tr>
+                        <th${data.valueAction ? ` data-action="${data.valueAction}"` : ''}>${type}</th>
+                        <td>${detailedValue}</td>
+                      </tr>
+                    `
+                  }).join('\n')}
+                </tbody>
+              </table>
+            `
+            break
+          case 'tempC':
+            // TODO: Unit conversion when required?
+            parsed = typeof value === 'number'
+              ? `${value} C`
+              : value
+            break
+          case 'uptime':
+            parsed = page.getPrettyUptime(value)
+            break
+          case 'unavailable':
+            parsed = 'N/A'
+            break
+          case 'auto':
+            switch (typeof value) {
+              case 'number':
+                parsed = value.toLocaleString()
+                break
+              default:
+                parsed = value
+            }
+            break
+          default:
+            parsed = value
+        }
+
+        let keyAttrs = ''
+        if (isDataObj && data.action) {
+          keyAttrs += ` data-action="${data.action}"`
+          if (data.actionData) {
+            keyAttrs += ` data-action-data="${data.actionData}"`
+          }
+        }
+
+        rows += `
+          <tr>
+            <th${keyAttrs}>${keys[j]}</th$>
+            <td>${parsed}</td>
+          </tr>
+        `
+      }
+
+      if (typeof stats.meta !== 'undefined') {
+        // Reload key
+        if (typeof stats.meta.key === 'string') {
+          statsKey = stats.meta.key
+          meta.push(`<i class="icon-arrows-cw" data-action="reload-stats-category" data-key="${stats.meta.key}"></i>`)
+        }
+        // generatedOn
+        if (typeof stats.meta.generatedOn !== 'undefined') {
+          meta.push(`Generated on ${page.getPrettyDate(new Date(stats.meta.generatedOn))}`)
+        }
+        // maxAge
+        if (typeof stats.meta.maxAge === 'number') {
+          meta.push(`(${stats.meta.maxAge / 1000}s)`)
+        } else {
+          meta.push('(auto)')
+        }
+      }
+    } catch (error) {
+      rows = `
+        <tr>
+          <td>Error parsing response. Try again?</td>
+          <td></td>
+        </tr>
+      `
+      page.onError(error)
+    }
+  }
+
+  return `
+    <div${statsKey ? ` id="stats-${statsKey}"` : ''} class="table-container has-text-left">
+      <table class="table statistics is-narrow is-fullwidth is-hoverable">
+        <thead>
+          <tr>
+            <th class="capitalize">${title}</th>
+            <td class="has-text-right">${meta.join(' ')}</td>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `
+}
+
 page.getStatistics = (params = {}) => {
   if (!page.permissions.admin) return swal('An error occurred!', 'You cannot do this!', 'error')
 
@@ -3004,91 +3311,15 @@ page.getStatistics = (params = {}) => {
     }
 
     let content = ''
+
     const keys = Object.keys(response.data.stats)
     for (let i = 0; i < keys.length; i++) {
-      let rows = ''
-      if (!response.data.stats[keys[i]]) {
-        rows += `
-          <tr>
-            <td>Generating, please try again later\u2026</td>
-            <td></td>
-          </tr>
-        `
-      } else {
-        try {
-          const valKeys = Object.keys(response.data.stats[keys[i]])
-          for (let j = 0; j < valKeys.length; j++) {
-            const data = response.data.stats[keys[i]][valKeys[j]]
-            const type = typeof data === 'object' ? data.type : 'auto'
-            const value = typeof data === 'object' ? data.value : data
-
-            let parsed
-            switch (type) {
-              case 'byte':
-                parsed = page.getPrettyBytes(value)
-                break
-              case 'byteUsage': {
-                // Reasoning: https://github.com/sebhildebrandt/systeminformation/issues/464#issuecomment-756406053
-                const totalForPercentage = typeof value.available !== 'undefined'
-                  ? (value.used + value.available)
-                  : value.total
-                parsed = `${page.getPrettyBytes(value.used)} / ${page.getPrettyBytes(value.total)} (${(value.used / totalForPercentage * 100).toFixed(2)}%)`
-                break
-              }
-              case 'uptime':
-                parsed = page.getPrettyUptime(value)
-                break
-              case 'auto':
-                switch (typeof value) {
-                  case 'number':
-                    parsed = value.toLocaleString()
-                    break
-                  default:
-                    parsed = value
-                }
-                break
-              default:
-                parsed = value
-            }
-
-            rows += `
-              <tr>
-                <th>${valKeys[j]}</th>
-                <td>${parsed}</td>
-              </tr>
-            `
-          }
-        } catch (error) {
-          rows = `
-              <tr>
-                <td>Error parsing response. Try again?</td>
-                <td></td>
-              </tr>
-            `
-          page.onError(error)
-        }
-      }
-
-      content += `
-        <div class="table-container has-text-left">
-          <table id="statistics" class="table is-narrow is-fullwidth is-hoverable">
-            <thead>
-              <tr>
-                <th class="capitalize">${keys[i]}</th>
-                <td></td>
-              </tr>
-            </thead>
-            <tbody>
-              ${rows}
-            </tbody>
-          </table>
-        </div>
-      `
+      content += page.buildStatisticTable(keys[i], response.data.stats[keys[i]])
     }
 
     if (Array.isArray(response.data.hrtime)) {
       content += `
-        <article class="message is-size-7">
+        <article id="stats-hrtime" class="message is-size-7">
           <div class="message-body has-text-left">
             Time taken: ${response.data.hrtime[0]}s ${Math.ceil(response.data.hrtime[1] / 1000000)}ms.
           </div>
@@ -3097,12 +3328,75 @@ page.getStatistics = (params = {}) => {
     }
 
     page.dom.innerHTML = content
-    page.fadeInDom()
-    page.scrollToDom()
+    page.fadeIn(page.dom)
+    page.scrollTo(page.dom)
     page.updateTrigger(params.trigger, 'active')
   }).catch(error => {
     page.updateTrigger(params.trigger)
     page.onAxiosError(error)
+  })
+}
+
+page.getStatisticsCategory = (params = {}) => {
+  if (!page.permissions.admin) return swal('An error occurred!', 'You cannot do this!', 'error')
+
+  if (page.isSomethingLoading) return page.warnSomethingLoading()
+
+  if (!params.key) return swal('An error occurred!', 'Missing stats category key!', 'error')
+
+  page.updateTrigger(params.trigger, 'loading')
+
+  const url = `api/stats/${params.key}`
+  axios.get(url).then(response => {
+    if (response.data.success === false) {
+      if (response.data.description === 'No token provided') {
+        return page.verifyToken(page.token)
+      } else {
+        page.updateTrigger(params.trigger)
+        return swal('An error occurred!', response.data.description, 'error')
+      }
+    }
+
+    const [title, stats] = Object.entries(response.data.stats).find(([name, stats]) => {
+      return stats && stats.meta && stats.meta.key === params.key
+    })
+    if (!title) {
+      return swal('An error occurred!', 'Server did not return required stats data.', 'error')
+    }
+
+    const statsTable = document.querySelector(`#stats-${params.key}`)
+    if (!statsTable) return
+
+    statsTable.innerHTML = page.buildStatisticTable(title, stats)
+
+    if (Array.isArray(response.data.hrtime)) {
+      const statsHrTime = document.querySelector('#stats-hrtime')
+      if (statsHrTime) {
+        statsHrTime.innerHTML = `
+          <article class="message is-size-7">
+            <div class="message-body has-text-left">
+              Time taken: ${response.data.hrtime[0]}s ${Math.ceil(response.data.hrtime[1] / 1000000)}ms.
+            </div>
+          </article>
+        `
+      }
+    }
+
+    page.fadeIn(statsTable)
+    page.updateTrigger(params.trigger, 'active')
+  }).catch(error => {
+    page.updateTrigger(params.trigger)
+    page.onAxiosError(error)
+  })
+}
+
+page.reloadStatsCategory = element => {
+  const key = element.dataset.key
+  if (!key) return
+
+  page.getStatisticsCategory({
+    key,
+    trigger: document.querySelector('#itemStatistics')
   })
 }
 

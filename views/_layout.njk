@@ -1,7 +1,7 @@
-{%- import '_globals.njk' as globals -%}
+{%- import '_globals.njk' as globals with context -%}
 
 {# Set root domain here to inherit values from config file #}
-{%- set root = utils.conf.homeDomain or utils.conf.domain -%}
+{%- set root = config.homeDomain or config.domain -%}
 
 {%- set title -%}
 {%- if metaTitle -%}
@@ -22,7 +22,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
 
-    <title>{{ title }}</title>
+    <title>{{ title | safe }}</title>
 
     {% block stylesheets %}
     <!-- Stylesheets -->
@@ -33,7 +33,7 @@
     <!-- Open Graph tags -->
     <meta property="og:url" content="{{ url }}" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="{{ title }}" />
+    <meta property="og:title" content="{{ title | safe }}" />
     <meta property="og:description" content="{{ metaDesc or globals.description }}" />
     {%- if metaImage %}
     <meta property="og:image" content="{{ metaImage }}" />
@@ -48,7 +48,7 @@
 
     <!-- Twitter Card tags -->
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="{{ title }}">
+    <meta name="twitter:title" content="{{ title | safe }}">
     <meta name="twitter:description" content="{{ metaDesc or globals.description }}">
     {%- if metaImage %}
     <meta name="twitter:image" content="{{ metaImage }}">

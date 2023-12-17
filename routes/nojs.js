@@ -1,18 +1,28 @@
 const { Router } = require('hyper-express')
 const routes = new Router()
-const uploadController = require('./../controllers/uploadController')
+const upload = require('./../controllers/uploadController')
 const utils = require('./../controllers/utilsController')
-const config = require('./../config')
+const config = require('./../controllers/utils/ConfigManager')
 
 routes.get('/nojs', async (req, res) => {
   return res.render('nojs', {
-    config,
-    utils,
-    versions: utils.versionStrings
-  })
+    config, utils, versions: utils.versionStrings
+  }, !utils.devmode)
 })
 
-routes.post('/nojs', async (req, res) => {
+// HyperExpress defaults to 250kb
+// https://github.com/kartikk221/hyper-express/blob/6.4.8/docs/Server.md#server-constructor-options
+routes.post('/nojs', {
+  max_body_length: parseInt(config.uploads.maxSize) * 1e6,
+  middlewares: [
+    async (req, res) => {
+      // Assert Request type early
+      utils.assertRequestType(req, 'multipart/form-data')
+    }
+  ]
+}, async (req, res) => {
+  // Map built-in Response.json() function into Response.render() accordingly
+  // Since NoJS uploader needs to reply with a complete HTML page
   res._json = res.json
   res.json = (...args) => {
     const result = args[0]
@@ -24,11 +34,12 @@ routes.post('/nojs', async (req, res) => {
       files: result.files || [{}]
     })
   }
-  return uploadController.upload(req, res)
-}, {
-  // HyperExpress defaults to 250kb
-  // https://github.com/kartikk221/hyper-express/blob/6.2.4/docs/Server.md#server-constructor-options
-  max_body_length: parseInt(config.uploads.maxSize) * 1e6
+
+  // Indicate uploadController.js to additionally process this request further
+  // (skip request type assertion, parse token from form input, etc.)
+  req.locals.nojs = true
+
+  return upload.upload(req, res)
 })
 
 module.exports = routes

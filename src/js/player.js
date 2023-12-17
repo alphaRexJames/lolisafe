@@ -14,7 +14,20 @@ const page = {
   titleFormat: null,
 
   videoContainer: document.querySelector('#playerContainer'),
-  player: null
+  player: null,
+
+  // Better Cloudflare errors
+  cloudflareErrors: {
+    520: 'Unknown Error',
+    521: 'Web Server Is Down',
+    522: 'Connection Timed Out',
+    523: 'Origin Is Unreachable',
+    524: 'A Timeout Occurred',
+    525: 'SSL Handshake Failed',
+    526: 'Invalid SSL Certificate',
+    527: 'Railgun Error',
+    530: 'Origin DNS Error'
+  }
 }
 
 // Disable video.js telemetry (should already be disabled by default since v7 though)
@@ -38,20 +51,11 @@ page.onError = error => {
 
 // Handler for Axios errors
 page.onAxiosError = error => {
-  // Better Cloudflare errors
-  const cloudflareErrors = {
-    520: 'Unknown Error',
-    521: 'Web Server Is Down',
-    522: 'Connection Timed Out',
-    523: 'Origin Is Unreachable',
-    524: 'A Timeout Occurred',
-    525: 'SSL Handshake Failed',
-    526: 'Invalid SSL Certificate',
-    527: 'Railgun Error',
-    530: 'Origin DNS Error'
+  if (!error.response) {
+    return page.onError(error)
   }
 
-  const statusText = cloudflareErrors[error.response.status] || error.response.statusText
+  const statusText = page.cloudflareErrors[error.response.status] || error.response.statusText
 
   const description = error.response.data && error.response.data.description
     ? error.response.data.description

@@ -249,6 +249,10 @@ fieldset[disabled] .select select:hover {
   word-break: break-all
 }
 
+.anim-fade-in {
+  animation: fade-in-opacity 0.5s
+}
+
 /** Fontello overrides **/
 
 .icon-gauge::before {
@@ -268,6 +272,24 @@ fieldset[disabled] .select select:hover {
 /* floating button's bottom offset + height + bottom offset */
 .section.has-extra-bottom-padding {
   padding-bottom: 6.5rem
+}
+
+/** SimpleLightbox **/
+
+.sl-wrapper {
+  .sl-close,
+  .sl-counter,
+  .sl-navigation button {
+    color: $white
+  }
+
+  .sl-image .sl-caption {
+    background: rgb(0 0 0 / 60%)
+  }
+}
+
+.sl-overlay {
+  background: $black
 }
 
 /** Floating home button **/

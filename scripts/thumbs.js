@@ -1,20 +1,25 @@
+const jetpack = require('fs-jetpack')
 const path = require('path')
 const paths = require('./../controllers/pathsController')
 const utils = require('./../controllers/utilsController')
+const Constants = require('./../controllers/utils/Constants')
 
 const self = {
   mode: null,
   mayGenerateThumb: extname => {
-    return ([1, 3].includes(self.mode) && utils.imageExts.includes(extname)) ||
-    ([2, 3].includes(self.mode) && utils.videoExts.includes(extname))
+    return ([1, 3].includes(self.mode) && Constants.IMAGE_EXTS.includes(extname)) ||
+    ([2, 3].includes(self.mode) && Constants.VIDEO_EXTS.includes(extname)) ||
+    (self.mode === 4 && extname === '.gif')
   },
   getFiles: async directory => {
-    const names = await paths.readdir(directory)
+    const names = await jetpack.listAsync(directory)
     const files = []
-    for (const name of names) {
-      const lstat = await paths.lstat(path.join(directory, name))
-      if (lstat.isFile() && !name.startsWith('.')) {
-        files.push(name)
+    if (Array.isArray(names) && names.length) {
+      for (const name of names) {
+        const exists = await jetpack.existsAsync(path.join(directory, name))
+        if (exists === 'file' && !name.startsWith('.')) {
+          files.push(name)
+        }
       }
     }
     return files
@@ -30,7 +35,7 @@ const self = {
   const verbose = parseInt(args[2]) || 0
   const cfcache = parseInt(args[3]) || 0
 
-  if (![1, 2, 3].includes(self.mode) ||
+  if (![1, 2, 3, 4].includes(self.mode) ||
     ![0, 1].includes(force) ||
     ![0, 1, 2].includes(verbose) ||
     ![0, 1].includes(cfcache) ||
@@ -40,9 +45,9 @@ const self = {
       Generate thumbnails.
 
       Usage:
-      node ${location} <mode=1|2|3> [force=0|1] [verbose=0|1] [cfcache=0|1]
+      node ${location} <mode=1|2|3|4> [force=0|1] [verbose=0|1] [cfcache=0|1]
 
-      mode    : 1 = images only, 2 = videos only, 3 = both images and videos
+      mode    : 1 = images only, 2 = videos only, 3 = both images and videos, 4 = animated only
       force   : 0 = no force (default), 1 = overwrite existing thumbnails
       verbose : 0 = only print missing thumbs (default), 1 = print all, 2 = print nothing
       cfcache : 0 = do not clear cloudflare cache (default), 1 = clear cloudflare cache

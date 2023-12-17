@@ -1,4 +1,5 @@
 const bcrypt = require('bcrypt')
+const jetpack = require('fs-jetpack')
 const path = require('path')
 const randomstring = require('randomstring')
 const paths = require('./pathsController')
@@ -6,7 +7,7 @@ const perms = require('./permissionController')
 const tokens = require('./tokenController')
 const utils = require('./utilsController')
 const ClientError = require('./utils/ClientError')
-const config = require('./../config')
+const config = require('./utils/ConfigManager')
 
 // Don't forget to update min/max length of text inputs in auth.njk
 // when changing these values.
@@ -26,30 +27,121 @@ const self = {
   }
 }
 
+/** Preferences */
+
 // https://github.com/kelektiv/node.bcrypt.js/tree/v5.0.1#a-note-on-rounds
 const saltRounds = 10
 
+const usersPerPage = config.dashboard
+  ? Math.max(Math.min(config.dashboard.usersPerPage || 0, 100), 1)
+  : 25
+
+// ip is an optional parameter, which if set will be rate limited
+// using tokens.authFailuresRateLimiter pool
+self.assertUser = async (token, fields, ip) => {
+  if (ip) {
+    const rateLimiterRes = await tokens.authFailuresRateLimiter.get(ip)
+    if (rateLimiterRes && rateLimiterRes.remainingPoints <= 0) {
+      throw new ClientError('Too many auth failures. Try again in a while.', { statusCode: 429 })
+    }
+  }
+
+  // Default fields/columns to fetch from database
+  const _fields = ['id', 'username', 'enabled', 'timestamp', 'permission', 'registration']
+
+  // Allow fetching additional fields/columns
+  if (typeof fields === 'string') {
+    fields = [fields]
+  }
+  if (Array.isArray(fields)) {
+    _fields.push(...fields)
+  }
+
+  const user = await utils.db.table('users')
+    .where('token', token)
+    .select(_fields)
+    .first()
+  if (user) {
+    if (user.enabled === false || user.enabled === 0) {
+      throw new ClientError('This account has been disabled.', { statusCode: 403 })
+    }
+    return user
+  } else {
+    if (ip) {
+      // Rate limit attempts with invalid token
+      await tokens.authFailuresRateLimiter.consume(ip, 1)
+    }
+    throw new ClientError('Invalid token.', { statusCode: 403, code: 10001 })
+  }
+}
+
+self.requireUser = (req, res, next, options = {}) => {
+  // Throws when token is missing, thus use only for users-only routes
+  const token = options.token || req.headers.token
+  if (!token) {
+    return next(new ClientError('No token provided.', { statusCode: 403 }))
+  }
+
+  self.assertUser(token, options.fields, req.ip)
+    .then(user => {
+      // Add user data to Request.locals.user
+      req.locals.user = user
+      return next()
+    })
+    .catch(next)
+}
+
+self.optionalUser = (req, res, next, options = {}) => {
+  // Throws when token if missing only when private is set to true in config,
+  // thus use for routes that can handle no auth requests
+  const token = options.token || req.headers.token
+  if (!token) {
+    if (config.private === true) {
+      return next(new ClientError('No token provided.', { statusCode: 403 }))
+    } else {
+      // Simply bypass this middleware otherwise
+      return next()
+    }
+  }
+
+  self.assertUser(token, options.fields, req.ip)
+    .then(user => {
+      // Add user data to Request.locals.user
+      req.locals.user = user
+      return next()
+    })
+    .catch(next)
+}
+
 self.verify = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-
-  // Parse POST body
-  req.body = await req.json()
-
   const username = typeof req.body.username === 'string'
     ? req.body.username.trim()
     : ''
-  if (!username) throw new ClientError('No username provided.')
+  if (!username) {
+    throw new ClientError('No username provided.')
+  }
 
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
-  if (!password) throw new ClientError('No password provided.')
+  if (!password) {
+    throw new ClientError('No password provided.')
+  }
+
+  // Use tokens.authFailuresRateLimiter pool for /api/login as well
+  const rateLimiterRes = await tokens.authFailuresRateLimiter.get(req.ip)
+  if (rateLimiterRes && rateLimiterRes.remainingPoints <= 0) {
+    throw new ClientError('Too many auth failures. Try again in a while.', { statusCode: 429 })
+  }
 
   const user = await utils.db.table('users')
     .where('username', username)
     .first()
 
-  if (!user) throw new ClientError('Wrong credentials.', { statusCode: 403 })
+  if (!user) {
+    await tokens.authFailuresRateLimiter.consume(req.ip, 1)
+    throw new ClientError('Wrong credentials.', { statusCode: 403 })
+  }
 
   if (user.enabled === false || user.enabled === 0) {
     throw new ClientError('This account has been disabled.', { statusCode: 403 })
@@ -57,6 +149,7 @@ self.verify = async (req, res) => {
 
   const result = await bcrypt.compare(password, user.password)
   if (result === false) {
+    await tokens.authFailuresRateLimiter.consume(req.ip, 1)
     throw new ClientError('Wrong credentials.', { statusCode: 403 })
   } else {
     return res.json({ success: true, token: user.token })
@@ -64,11 +157,6 @@ self.verify = async (req, res) => {
 }
 
 self.register = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-
-  // Parse POST body
-  req.body = await req.json()
-
   if (config.enableUserAccounts === false) {
     throw new ClientError('Registration is currently disabled.', { statusCode: 403 })
   }
@@ -80,6 +168,13 @@ self.register = async (req, res) => {
     throw new ClientError(`Username must have ${self.user.min}-${self.user.max} characters.`)
   }
 
+  // "root" user is not required if you have other users with superadmin permission,
+  // so removing them via direct database query is possible.
+  // However, protect it from being re-created via the API endpoints anyway.
+  if (username === 'root') {
+    throw new ClientError('Username is reserved.')
+  }
+
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
@@ -87,11 +182,22 @@ self.register = async (req, res) => {
     throw new ClientError(`Password must have ${self.pass.min}-${self.pass.max} characters.`)
   }
 
+  // Use tokens.authFailuresRateLimiter pool for /api/register as well
+  const rateLimiterRes = await tokens.authFailuresRateLimiter.get(req.ip)
+  if (rateLimiterRes && rateLimiterRes.remainingPoints <= 0) {
+    throw new ClientError('Too many auth failures. Try again in a while.', { statusCode: 429 })
+  }
+
   const user = await utils.db.table('users')
     .where('username', username)
     .first()
 
-  if (user) throw new ClientError('Username already exists.')
+  if (user) {
+    // Also consume rate limit to protect this route
+    // from being brute-forced to find existing usernames
+    await tokens.authFailuresRateLimiter.consume(req.ip, 1)
+    throw new ClientError('Username already exists.')
+  }
 
   const hash = await bcrypt.hash(password, saltRounds)
 
@@ -113,12 +219,6 @@ self.register = async (req, res) => {
 }
 
 self.changePassword = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-  const user = await utils.authorize(req)
-
-  // Parse POST body
-  req.body = await req.json()
-
   const password = typeof req.body.password === 'string'
     ? req.body.password.trim()
     : ''
@@ -129,37 +229,34 @@ self.changePassword = async (req, res) => {
   const hash = await bcrypt.hash(password, saltRounds)
 
   await utils.db.table('users')
-    .where('id', user.id)
+    .where('id', req.locals.user.id)
     .update('password', hash)
 
   return res.json({ success: true })
 }
 
 self.assertPermission = (user, target) => {
-  if (!target) {
-    throw new ClientError('Could not get user with the specified ID.')
-  } else if (!perms.higher(user, target)) {
+  if (!perms.higher(user, target)) {
     throw new ClientError('The user is in the same or higher group as you.', { statusCode: 403 })
-  } else if (target.username === 'root') {
-    throw new ClientError('Root user may not be tampered with.', { statusCode: 403 })
   }
 }
 
 self.createUser = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-  const user = await utils.authorize(req)
-
-  // Parse POST body
-  req.body = await req.json()
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) return res.status(403).end()
+  const isadmin = perms.is(req.locals.user, 'admin')
+  if (!isadmin) {
+    return res.status(403).end()
+  }
 
   const username = typeof req.body.username === 'string'
     ? req.body.username.trim()
     : ''
   if (username.length < self.user.min || username.length > self.user.max) {
     throw new ClientError(`Username must have ${self.user.min}-${self.user.max} characters.`)
+  }
+
+  // Please consult notes in self.register() function.
+  if (username === 'root') {
+    throw new ClientError('Username is reserved.')
   }
 
   let password = typeof req.body.password === 'string'
@@ -187,7 +284,9 @@ self.createUser = async (req, res) => {
     .where('username', username)
     .first()
 
-  if (exists) throw new ClientError('Username already exists.')
+  if (exists) {
+    throw new ClientError('Username already exists.')
+  }
 
   const hash = await bcrypt.hash(password, saltRounds)
 
@@ -209,22 +308,26 @@ self.createUser = async (req, res) => {
 }
 
 self.editUser = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-  const user = await utils.authorize(req)
-
-  // Parse POST body, if required
-  req.body = req.body || await req.json()
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) throw new ClientError('', { statusCode: 403 })
+  const isadmin = perms.is(req.locals.user, 'admin')
+  if (!isadmin) {
+    return res.status(403).end()
+  }
 
   const id = parseInt(req.body.id)
-  if (isNaN(id)) throw new ClientError('No user specified.')
+  if (isNaN(id)) {
+    throw new ClientError('No user specified.')
+  }
 
   const target = await utils.db.table('users')
     .where('id', id)
     .first()
-  self.assertPermission(user, target)
+
+  if (!target) {
+    throw new ClientError('Could not get user with the specified ID.')
+  }
+
+  // Ensure this user has permission to tamper with target user
+  self.assertPermission(req.locals.user, target)
 
   const update = {}
 
@@ -252,6 +355,10 @@ self.editUser = async (req, res) => {
     update.password = await bcrypt.hash(password, saltRounds)
   }
 
+  if (!Object.keys(update).length) {
+    throw new ClientError('You are not editing any properties of this user.')
+  }
+
   await utils.db.table('users')
     .where('id', id)
     .update(update)
@@ -266,38 +373,37 @@ self.editUser = async (req, res) => {
 }
 
 self.disableUser = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-
-  // Parse POST body and re-map for .editUser()
-  req.body = await req.json()
-    .then(obj => {
-      return {
-        id: obj.id,
-        enabled: false
-      }
-    })
+  // Re-map Request.body for .editUser()
+  req.body = {
+    id: req.body.id,
+    enabled: false
+  }
 
   return self.editUser(req, res)
 }
 
 self.deleteUser = async (req, res) => {
-  utils.assertRequestType(req, 'application/json')
-  const user = await utils.authorize(req)
-
-  // Parse POST body
-  req.body = await req.json()
-
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) throw new ClientError('', { statusCode: 403 })
+  const isadmin = perms.is(req.locals.user, 'admin')
+  if (!isadmin) {
+    return res.status(403).end()
+  }
 
   const id = parseInt(req.body.id)
   const purge = req.body.purge
-  if (isNaN(id)) throw new ClientError('No user specified.')
+  if (isNaN(id)) {
+    throw new ClientError('No user specified.')
+  }
 
   const target = await utils.db.table('users')
     .where('id', id)
     .first()
-  self.assertPermission(user, target)
+
+  if (!target) {
+    throw new ClientError('Could not get user with the specified ID.')
+  }
+
+  // Ensure this user has permission to tamper with target user
+  self.assertPermission(req.locals.user, target)
 
   const files = await utils.db.table('files')
     .where('userid', id)
@@ -306,7 +412,7 @@ self.deleteUser = async (req, res) => {
   if (files.length) {
     const fileids = files.map(file => file.id)
     if (purge) {
-      const failed = await utils.bulkDeleteFromDb('id', fileids, user)
+      const failed = await utils.bulkDeleteFromDb('id', fileids, req.locals.user)
       utils.invalidateStatsCache('uploads')
       if (failed.length) {
         return res.json({ success: false, failed })
@@ -331,15 +437,10 @@ self.deleteUser = async (req, res) => {
       .del()
     utils.deleteStoredAlbumRenders(albumids)
 
-    // Unlink their archives
-    await Promise.all(albums.map(async album => {
-      try {
-        await paths.unlink(path.join(paths.zips, `${album.identifier}.zip`))
-      } catch (error) {
-        // Re-throw non-ENOENT error
-        if (error.code !== 'ENOENT') throw error
-      }
-    }))
+    // Unlink their album ZIP archives
+    await Promise.all(albums.map(async album =>
+      jetpack.removeAsync(path.join(paths.zips, `${album.identifier}.zip`))
+    ))
   }
 
   await utils.db.table('users')
@@ -355,29 +456,35 @@ self.bulkDeleteUsers = async (req, res) => {
 }
 
 self.listUsers = async (req, res) => {
-  const user = await utils.authorize(req)
+  const isadmin = perms.is(req.locals.user, 'admin')
+  if (!isadmin) {
+    return res.status(403).end()
+  }
 
-  const isadmin = perms.is(user, 'admin')
-  if (!isadmin) throw new ClientError('', { statusCode: 403 })
+  // Base result object
+  const result = { success: true, users: [], usersPerPage, count: 0 }
 
-  const count = await utils.db.table('users')
+  result.count = await utils.db.table('users')
     .count('id as count')
     .then(rows => rows[0].count)
-  if (!count) {
-    return res.json({ success: true, users: [], count })
+  if (!result.count) {
+    return res.json(result)
   }
 
   let offset = req.path_parameters && Number(req.path_parameters.page)
-  if (isNaN(offset)) offset = 0
-  else if (offset < 0) offset = Math.max(0, Math.ceil(count / 25) + offset)
+  if (isNaN(offset)) {
+    offset = 0
+  } else if (offset < 0) {
+    offset = Math.max(0, Math.ceil(result.count / usersPerPage) + offset)
+  }
 
-  const users = await utils.db.table('users')
-    .limit(25)
-    .offset(25 * offset)
+  result.users = await utils.db.table('users')
+    .limit(usersPerPage)
+    .offset(usersPerPage * offset)
     .select('id', 'username', 'enabled', 'timestamp', 'permission', 'registration')
 
   const pointers = {}
-  for (const user of users) {
+  for (const user of result.users) {
     user.groups = perms.mapPermissions(user)
     delete user.permission
     user.uploads = 0
@@ -394,7 +501,7 @@ self.listUsers = async (req, res) => {
     pointers[upload.userid].usage += parseInt(upload.size)
   }
 
-  return res.json({ success: true, users, count })
+  return res.json(result)
 }
 
 module.exports = self

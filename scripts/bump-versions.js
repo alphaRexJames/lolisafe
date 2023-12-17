@@ -1,5 +1,4 @@
-const { promisify } = require('util')
-const fs = require('fs')
+const jetpack = require('fs-jetpack')
 const path = require('path')
 
 const self = {
@@ -16,9 +15,6 @@ const self = {
     }
     return result
   },
-  access: promisify(fs.access),
-  readFile: promisify(fs.readFile),
-  writeFile: promisify(fs.writeFile),
   types: null
 }
 
@@ -67,19 +63,13 @@ const self = {
   const file = path.resolve('./src/versions.json')
 
   // Create an empty file if it does not exist
-  try {
-    await self.access(file)
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      await self.writeFile(file, '{}')
-    } else {
-      // Re-throw error
-      throw error
-    }
+  const exists = await jetpack.existsAsync(file)
+  if (exists !== 'file') {
+    await jetpack.writeAsync(file, '{}\n')
   }
 
   // Read & parse existing versions
-  const old = JSON.parse(await self.readFile(file))
+  const old = await jetpack.readAsync(file, 'json')
 
   // Bump version of selected types
   // We use current timestamp cause it will always increase
@@ -96,7 +86,7 @@ const self = {
   const stringified = JSON.stringify(data, null, 2) + '\n'
 
   // Write to file
-  await self.writeFile(file, stringified)
+  await jetpack.writeAsync(file, stringified)
   console.log(`Successfully bumped version string of type ${types.join(', ')} to "${bumped}".`)
 })()
   .then(() => process.exit(0))

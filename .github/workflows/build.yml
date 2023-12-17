@@ -11,17 +11,17 @@ on:
       - 'src/versions.json'
 
 env:
-  NODE_VERSION: 16
+  NODE_VERSION: 18
 
 jobs:
   build:
     name: Rebuild client assets and bump v1 version string
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Use Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -42,7 +42,7 @@ jobs:
       - name: yarn build
         run: yarn build
 
-      - uses: stefanzweifel/git-auto-commit-action@v4
+      - uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: 'dist: rebuilt client assets and bumped v1 version string'
           commit_user_name: loli-bot

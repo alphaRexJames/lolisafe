@@ -14,8 +14,6 @@ self.permissions = Object.freeze({
 self.keys = Object.freeze(Object.keys(self.permissions))
 
 self.group = user => {
-  // root bypass
-  if (user.username === 'root') return 'superadmin'
   for (const key of self.keys) {
     if (user.permission === self.permissions[key]) {
       return key
@@ -26,9 +24,9 @@ self.group = user => {
 
 // returns true if user is in the group OR higher
 self.is = (user, group) => {
-  // root bypass
-  if (user.username === 'root') return true
-  if (typeof group !== 'string' || !group) return false
+  if (typeof group !== 'string' || !group) {
+    return false
+  }
   const permission = user.permission || 0
   return permission >= self.permissions[group]
 }

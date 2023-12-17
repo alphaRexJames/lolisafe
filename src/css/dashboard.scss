@@ -7,10 +7,6 @@ body {
   animation: none
 }
 
-#dashboard {
-  animation: fade-in-opacity 0.5s
-}
-
 .menu-label {
   color: $grey-light
 }
@@ -72,10 +68,6 @@ body {
       padding-left: 0.75em
     }
   }
-}
-
-#page.fade-in {
-  animation: fade-in-opacity 0.5s
 }
 
 .pagination {
@@ -140,8 +132,19 @@ li[data-action="page-ellipsis"] {
   }
 }
 
-#statistics tr *:nth-child(1) {
-  width: 50%
+.statistics {
+  thead,
+  tbody {
+    > tr {
+      > :first-child {
+        min-width: 33.3%
+      }
+
+      > :nth-child(2) :first-child {
+        min-width: 50%
+      }
+    }
+  }
 }
 
 .expirydate {
@@ -159,6 +162,18 @@ li[data-action="page-ellipsis"] {
   td {
     &[title] {
       cursor: help
+    }
+
+    &[data-action] {
+      cursor: pointer;
+
+      &:hover {
+        text-decoration: dotted underline
+      }
+    }
+
+    i[data-action] {
+      cursor: pointer
     }
   }
 }

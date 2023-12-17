@@ -2,7 +2,7 @@ const path = require('path')
 const paths = require('./pathsController')
 const ClientError = require('./utils/ClientError')
 const ServerError = require('./utils/ServerError')
-const config = require('./../config')
+const config = require('./utils/ConfigManager')
 const logger = require('./../logger')
 
 const self = {
@@ -13,8 +13,8 @@ const self = {
 
 self.handleError = (req, res, error) => {
   if (!res || res.headersSent) {
-    logger.error('Error: Unexpected missing "res" object or headers alredy sent.')
-    return logger.error(error)
+    logger.error(error)
+    return
   }
 
   res.header('Cache-Control', 'no-store')
@@ -62,6 +62,8 @@ self.handleError = (req, res, error) => {
 }
 
 self.handleNotFound = (req, res) => {
+  if (!res || res.headersSent) return
+
   res.header('Cache-Control', 'no-store')
   return res
     .status(404)

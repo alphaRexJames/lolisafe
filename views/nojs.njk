@@ -3,14 +3,6 @@
 
 {% extends "_layout.njk" %}
 
-{% set private = config.private %}
-{% set disabledMessage -%}
-  {%- if config.enableUserAccounts -%}
-  Anonymous upload is disabled. Log in to upload.
-  {%- else -%}
-  Running in private mode. Log in to upload.
-  {%- endif %}
-{%- endset %}
 {% set maxSizeInt = config.uploads.maxSize | int %}
 {% set noJsMaxSizeInt = config.cloudflare.noJsMaxSize | int %}
 
@@ -37,11 +29,6 @@
       <div class="columns is-gapless">
         <div class="column is-hidden-mobile"></div>
         <div class="column">
-          {% if private -%}
-          <a class="button is-danger is-outlined is-fullwidth" href="auth">
-            {{ disabledMessage }}
-          </a>
-          {%- else -%}
           <form id="form" class="field" action="" method="post" enctype="multipart/form-data">
             <div class="field">
               <p class="control">
@@ -50,14 +37,18 @@
             </div>
             <div class="field">
               <p class="control">
+                <input type="text" class="input is-fullwidth" name="token" minLength="64" maxLength="64" placeholder="API token ({{ "required" if config.private else "optional"}})"{% if config.private %} required="required"{% endif %}>
+              </p>
+            </div>
+            <div class="field">
+              <p class="control">
                 <input type="submit" class="button is-danger is-outlined is-fullwidth" value="Upload">
               </p>
               <p class="help">
-                Files uploaded through this form will not be associated with your account, if you have any.
+                Files uploaded through this form will only be associated with your account if you specify your API token.
               </p>
             </div>
           </form>
-          {%- endif %}
           {% if files -%}
           <div class="field uploads nojs">
             {% for file in files -%}

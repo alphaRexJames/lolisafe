@@ -1,15 +1,18 @@
+const jetpack = require('fs-jetpack')
 const path = require('path')
 const paths = require('./../controllers/pathsController')
 const utils = require('./../controllers/utilsController')
 
 const self = {
   getFiles: async directory => {
-    const names = await paths.readdir(directory)
+    const names = await jetpack.listAsync(directory)
     const files = []
-    for (const name of names) {
-      const lstat = await paths.lstat(path.join(directory, name))
-      if (lstat.isFile() && !name.startsWith('.')) {
-        files.push(name)
+    if (Array.isArray(names) && names.length) {
+      for (const name of names) {
+        const exists = await jetpack.existsAsync(path.join(directory, name))
+        if (exists === 'file' && !name.startsWith('.')) {
+          files.push(name)
+        }
       }
     }
     return files
@@ -62,11 +65,11 @@ const self = {
     console.log('INFO: This was a dry run. No files had been deleted.')
   } else if (!dryrun) {
     for (const upload of uploadsNotInDb) {
-      await paths.unlink(path.join(paths.uploads, upload))
+      await jetpack.removeAsync(path.join(paths.uploads, upload))
       console.log(`${upload}: OK`)
     }
     for (const thumb of thumbsNotInDb) {
-      await paths.unlink(path.join(paths.thumbs, thumb))
+      await jetpack.removeAsync(path.join(paths.thumbs, thumb))
       console.log(`${thumb}: OK`)
     }
   }

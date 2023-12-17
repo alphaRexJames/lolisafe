@@ -10,7 +10,8 @@ const now = () => {
   const parsed = {
     hours: time.getHours(),
     minutes: time.getMinutes(),
-    seconds: time.getSeconds()
+    seconds: time.getSeconds(),
+    milliseconds: time.getMilliseconds()
   }
 
   if (!short) {
@@ -24,7 +25,8 @@ const now = () => {
   })
 
   return (!short ? `${time.getFullYear()}-${parsed.month}-${parsed.date} ` : '') +
-    `${parsed.hours}:${parsed.minutes}:${parsed.seconds}`
+    `${parsed.hours}:${parsed.minutes}:${parsed.seconds}` +
+    (short ? `.${String(parsed.milliseconds).padStart(3, '0')}` : '')
 }
 
 const clean = item => {

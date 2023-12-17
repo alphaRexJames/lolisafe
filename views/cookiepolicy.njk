@@ -27,6 +27,16 @@
       </div>
     </article>
 
+    <h3 class="subtitle has-text-white-ter">Will blocking cookies inhibit my usage of this site?</h3>
+    <article class="message">
+      <div class="message-body">
+        <strong>The short answer is, no.</strong><br>
+        As will be explained in more details in <a href="#cookies-we-may-use">Cookies We May Use</a> section, the site's operations strictly depend on your browser's Local Storage feature.<br>
+        But our server-side general analytics system makes use of cookies, which means that if you simply wish to opt-out of our analytics, you are free to simply block cookies from us.<br>
+        The site will still remain fully operational regardless.
+      </div>
+    </article>
+
     <h3 class="subtitle has-text-white-ter">How We Use Cookies</h3>
     <article class="message">
       <div class="message-body">
@@ -67,9 +77,15 @@
       </div>
     </article>
 
-    <h3 class="subtitle has-text-white-ter">Cookies We May Use</h3>
+    <h3 id="cookies-we-may-use" class="subtitle has-text-white-ter">Cookies We May Use</h3>
     <article class="message">
       <div class="message-body">
+        {#
+          Note to system admins who fork this project:
+          "cid" is a cookie name we use for our server-side general analytics system at fiery.me,
+          and is not something that was baked into this project.
+          If you do not have other systems that will add other cookies, this project will run cookies-less, as designed.
+        #}
         We may use the following cookies:<br>
         <br>
         <div class="table-container">
@@ -84,12 +100,6 @@
             </thead>
             <tbody>
               <tr>
-                <th>chunkSize</th>
-                <td>{{ globals.root_domain }}</td>
-                <td>Personalization</td>
-                <td>LocalStorage</td>
-              </tr>
-              <tr>
                 <th>cid</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Analytics</td>
@@ -98,129 +108,131 @@
               <tr>
                 <th>cookieconsent_status</th>
                 <td>{{ globals.root_domain }}</td>
-                <td>Necessary</td>
+                <td>Analytics</td>
                 <td>730</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        Those keys will be set on first page load regardless of your consent, but they are safe to manually block via a third-party utility, if you wish to opt-out.<br>
+        <br>
+        We may use the following Local Storage keys:<br>
+        <br>
+        <div class="table-container">
+          <table class="table is-fullwidth is-hoverable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Source</th>
+                <th>Purpose</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>chunkSize</th>
+                <td>{{ globals.root_domain }}</td>
+                <td>Personalization</td>
               </tr>
               <tr>
                 <th>fileLength</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>newsfeed</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Necessary</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>originalNames</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>originalNamesAll</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>parallelUploads</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>previewImages</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>render</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>selectedAlbums</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>selectedAlbumsAll</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>selectedUploads</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>selectedUploadsAll</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>selectedUsers</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>siBytes</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>stripTags</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>token</th>
                 <td>{{ globals.root_domain }}</td>
-                <td>Necessary</td>
-                <td>LocalStorage</td>
+                <td>Session</td>
               </tr>
               <tr>
                 <th>uploadAge</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>uploadsHistoryOrder</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>viewTypeUploads</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
               <tr>
                 <th>viewTypeUploadsAll</th>
                 <td>{{ globals.root_domain }}</td>
                 <td>Personalization</td>
-                <td>LocalStorage</td>
               </tr>
             </tbody>
           </table>
         </div>
-        Only Analytics keys will be set on first page load regardless of your consent.<br>
-        The rest will only be set as you use features of our website.<br>
-        However, all Personalization keys should delete themselves once you set back their default values.
+        Those keys will be set as you use features of our website.<br>
+        Personalization keys in particular are designed to clear themselves whenever you set them to their default values.
       </div>
     </article>
 

@@ -2,10 +2,9 @@
   "extends": "stylelint-config-standard-scss",
   "rules": {
     "block-closing-brace-newline-before": null,
-    "declaration-block-trailing-semicolon": "never",
-    "indentation": 2,
     "no-descending-specificity": null,
     "scss/at-import-no-partial-leading-underscore": null,
+    "scss/load-no-partial-leading-underscore": null,
     "selector-class-pattern": null,
     "selector-id-pattern": null
   }

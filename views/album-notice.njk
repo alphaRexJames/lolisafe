@@ -1,5 +1,5 @@
 {% set metaTitle %}
-{{- album.name | truncate(60, true, '…') -}}
+{{- album.name | safe | truncate(60, true, '…') -}}
 {% endset %}
 {% set metaDesc = album.description | striptags | truncate(200, true, '…') %}
 {% set metaUrl = '/' + album.url %}
