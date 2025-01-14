@@ -1842,12 +1842,6 @@ self.list = async (req, res) => {
         }
         return obj
       })
-
-    // If filtering by album IDs,
-    // then filter out uploads with missing albums data (assume disabled/deleted)
-    if (filterByAlbums) {
-      result.files = result.files.filter(file => result.albums[file.albumid] !== undefined)
-    }
   }
 
   // If we are not listing all uploads, send response

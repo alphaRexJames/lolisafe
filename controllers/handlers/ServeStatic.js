@@ -108,11 +108,13 @@ class ServeStatic {
   // Can be programatically called from within in-progress Requests
   // Essentially stream-based alternative for Response.download() or Response.send()
   async #handle (req, res, fullPath, stat, setHeaders) {
+    const extname = utils.extname(req.path).substring(1)
+
     // Set Content-Type
-    res.type(fullPath)
+    res.type(extname)
 
     // Set header fields
-    await this.#setHeaders(req, res, stat)
+    await this.#setHeaders(req, res, stat, extname)
 
     // Per-request setHeaders, if required
     if (typeof setHeaders === 'function') {
@@ -210,24 +212,16 @@ class ServeStatic {
     }
   }
 
-  async #setContentType (req, res) {
-    // Do only if accessing files from uploads' root directory (i.e. not thumbs, etc.)
-    if (req.path.indexOf('/', 1) !== -1) return
-
-    const name = req.path.substring(1)
-    const extname = utils.extname(name).substring(1)
-    const contentType = this.contentTypesMaps.get(extname)
-    if (contentType) {
-      // NOTE: Use lowercase key because the header initially set
-      // with Response.type() is also lowercase
-      res.header('content-type', contentType)
-    }
-  }
-
-  async #setHeaders (req, res, stat) {
+  async #setHeaders (req, res, stat, extname) {
     // Override Content-Type if required
-    if (this.contentTypesMaps) {
-      this.#setContentType(req, res)
+    if (this.contentTypesMaps && req.path.indexOf('/', 1) === -1) {
+      // Do only if accessing files from uploads' root directory (i.e. not thumbs, etc.)
+      const contentType = this.contentTypesMaps.get(extname)
+      if (contentType) {
+        // NOTE: Use lowercase key because the header initially set
+        // with Response.type() is also lowercase
+        res.header('content-type', contentType)
+      }
     }
 
     // Always do external setHeaders function first,

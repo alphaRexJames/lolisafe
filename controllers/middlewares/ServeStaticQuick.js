@@ -22,6 +22,7 @@
 const chokidar = require('chokidar')
 const etag = require('etag')
 const jetpack = require('fs-jetpack')
+const nodePath = require('node:path')
 const serveUtils = require('./../utils/serveUtils')
 const logger = require('./../../logger')
 
@@ -84,19 +85,19 @@ class ServeStaticQuick {
   }
 
   get (path) {
-    const stat = this.files.get(path)
+    const data = this.files.get(path)
 
-    if (!stat || stat.isDirectory()) return
+    if (!data?.stat || data?.stat?.isDirectory()) return
 
-    return stat
+    return data
   }
 
-  handler (req, res, path, stat) {
+  handler (req, res, path, data) {
     // Set Content-Type
-    res.type(path)
+    res.type(data.extname)
 
     // Set header fields
-    this.#setHeaders(req, res, stat)
+    this.#setHeaders(req, res, data.stat)
 
     // Conditional GET support
     if (serveUtils.assertConditionalGET(req, res)) {
@@ -104,7 +105,7 @@ class ServeStaticQuick {
     }
 
     // ReadStream options with Content-Range support if required
-    const result = serveUtils.buildReadStreamOptions(req, res, stat, this.#options.acceptRanges)
+    const result = serveUtils.buildReadStreamOptions(req, res, data.stat, this.#options.acceptRanges)
     if (!result) {
       return res.end()
     }
@@ -120,7 +121,7 @@ class ServeStaticQuick {
       res.end()
     }
 
-    return this.#stream(req, res, path, stat, result)
+    return this.#stream(req, res, path, data.stat, result)
   }
 
   // Returns a promise which resolves to true once ServeStaticQuick is ready
@@ -148,7 +149,10 @@ class ServeStaticQuick {
         case 'change':
           // Ensure relative path does not pass ignore function if set
           if (!this.#options.ignore || !this.#options.ignore(relPath, stat)) {
-            this.files.set(relPath, stat)
+            this.files.set(relPath, {
+              stat,
+              extname: nodePath.extname(relPath).substring(1)
+            })
           }
           break
         case 'unlink':
@@ -189,12 +193,12 @@ class ServeStaticQuick {
       }
     }
 
-    const stat = this.get(path)
-    if (stat === undefined) {
+    const data = this.get(path)
+    if (data === undefined) {
       return next()
     }
 
-    return this.handler(req, res, path, stat)
+    return this.handler(req, res, path, data)
   }
 
   #setHeaders (req, res, stat) {
